@@ -13,10 +13,14 @@ intents = discord.Intents.default()
 intents.message_content = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# --- CONFIGURATION ---
+# REMPLACE CET ID PAR CELUI DE TON SALON DE MODÉRATION
+REPORT_CHANNEL_ID = 1420794939565936743
+
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
-ANNUAIRE_PATH = "/data/annuaire.json" # Nouveau fichier pour l'annuaire
+ANNUAIRE_PATH = "/data/annuaire.json"
 
 def get_paris_time():
     paris_tz = pytz.timezone("Europe/Paris")
@@ -189,122 +193,112 @@ async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=Loc
 
 
 # =================================================================================
-# SECTION 3 : NOUVELLE LOGIQUE POUR LA COMMANDE !ANNUAIRE
+# SECTION 3 : LOGIQUE POUR LA COMMANDE !ANNUAIRE (MISE À JOUR)
 # =================================================================================
 
 # --- Fonctions Utilitaires pour !annuaire ---
 def load_annuaire():
-    """Charge les données de l'annuaire depuis le volume persistant."""
     try:
-        with open(ANNUAIRE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(ANNUAIRE_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except FileNotFoundError:
-        # Crée le fichier avec une structure vide si non trouvé
         default_data = {"Patron": [], "Co-Patron": [], "Chefs d'équipe": [], "Employés": []}
         save_annuaire(default_data)
         return default_data
 
 def save_annuaire(data):
-    """Sauvegarde les données de l'annuaire dans le volume persistant."""
-    with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+    with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
 # --- Embed pour !annuaire ---
 def create_annuaire_embed():
     data = load_annuaire()
     embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
-    
-    # Ordre et icônes des rôles
-    role_order = {
-        "Patron": "👑",
-        "Co-Patron": "⭐",
-        "Chefs d'équipe": "📋",
-        "Employés": "👨‍💼"
-    }
-
+    role_order = {"Patron": "👑", "Co-Patron": "⭐", "Chefs d'équipe": "📋", "Employés": "👨‍💼"}
     for role_name, icon in role_order.items():
         entries = data.get(role_name, [])
-        if not entries:
-            continue # Ne pas afficher le rôle s'il n'y a personne
-            
+        if not entries: continue
         value_str = ""
         for entry in entries:
-            # Affiche "Non renseigné" si le numéro est vide ou nul
             number = entry.get("number")
-            if not number:
-                value_str += f"• {entry['name']} → ❌ Non renseigné\n"
-            else:
-                value_str += f"• {entry['name']} → `{number}`\n"
-        
+            value_str += f"• {entry['name']} → {'`' + number + '`' if number else '❌ Non renseigné'}\n"
         embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
-
     embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
     return embed
 
 # --- Formulaire pour ajouter/modifier un numéro ---
 class AnnuaireModal(Modal, title="Mon numéro de téléphone"):
-    phone_number = TextInput(
-        label="Saisis ton numéro ici",
-        placeholder="Ex: 0612345678",
-        required=False # Le champ n'est pas obligatoire pour pouvoir le supprimer
-    )
-
+    phone_number = TextInput(label="Saisis ton numéro ici (laisse vide pour le supprimer)", placeholder="Ex: 0612345678", required=False)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = load_annuaire()
-        user = interaction.user
-        number = self.phone_number.value.strip()
-
-        # Retrouve et supprime l'ancienne entrée de l'utilisateur, peu importe son ancien rôle
+        data, user, number = load_annuaire(), interaction.user, self.phone_number.value.strip()
         for role_group in data.values():
-            # Utilise une compréhension de liste pour ne pas modifier la liste pendant l'itération
-            new_role_group = [entry for entry in role_group if entry['id'] != user.id]
-            role_group.clear()
-            role_group.extend(new_role_group)
-        
-        # Logique pour trouver le rôle le plus haut de l'utilisateur
-        # IMPORTANT: Configure l'ordre de tes rôles ici, du plus haut au plus bas
+            role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
         role_priority = ["Patron", "Co-Patron", "Chefs d'équipe", "Employés"]
-        user_role_name = None
-        for role_name in role_priority:
-            if discord.utils.get(user.roles, name=role_name):
-                user_role_name = role_name
-                break
-        
-        # Ajoute la nouvelle entrée si un rôle correspondant est trouvé et un numéro est fourni
+        user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), None)
         if user_role_name and number:
             data[user_role_name].append({"id": user.id, "name": user.display_name, "number": number})
-        
         save_annuaire(data)
-
-        # Met à jour le message de l'annuaire
         try:
-            # On suppose qu'il n'y a qu'un seul message d'annuaire par salon
             async for message in interaction.channel.history(limit=100):
                 if message.author == bot.user and message.embeds and message.embeds[0].title == "📞 Annuaire Téléphonique":
-                    await message.edit(embed=create_annuaire_embed())
-                    break
-            await interaction.followup.send("✅ Ton numéro a été mis à jour dans l'annuaire !", ephemeral=True)
-        except (discord.NotFound, discord.Forbidden):
-            await interaction.followup.send("✅ Ton numéro a été sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
+                    await message.edit(embed=create_annuaire_embed()); break
+            await interaction.followup.send("✅ Ton numéro a été mis à jour !", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden): await interaction.followup.send("✅ Ton numéro est sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
 
-# --- Vue pour l'annuaire ---
-class AnnuaireView(View):
+# --- NOUVEAU : Vue pour signaler un utilisateur ---
+class ReportSelectView(View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)
+        
+        all_users = []
+        data = load_annuaire()
+        for role_group in data.values():
+            for user_entry in role_group:
+                all_users.append(SelectOption(label=user_entry['name'], value=str(user_entry['id'])))
+        
+        if not all_users:
+            all_users.append(SelectOption(label="Personne dans l'annuaire", value="disabled"))
 
+        self.user_select = Select(placeholder="Qui veux-tu signaler ?", options=all_users)
+        self.add_item(self.user_select)
+
+    @discord.ui.select()
+    async def select_callback(self, interaction: discord.Interaction, select: Select):
+        user_id_to_report = select.values[0]
+        if user_id_to_report == "disabled":
+            await interaction.response.edit_message(content="Action annulée.", view=None)
+            return
+
+        report_channel = bot.get_channel(REPORT_CHANNEL_ID)
+        if not report_channel:
+            await interaction.response.edit_message(content="❌ Erreur : Le salon de signalement n'a pas été trouvé.", view=None)
+            return
+
+        member_to_report = interaction.guild.get_member(int(user_id_to_report))
+        if not member_to_report:
+            await interaction.response.edit_message(content="❌ Erreur : Ce membre n'a pas pu être trouvé sur le serveur.", view=None)
+            return
+            
+        try:
+            await report_channel.send(
+                f"Bonjour {member_to_report.mention}, un administrateur a signalé que ton numéro dans l'annuaire est invalide ou incorrect. "
+                "Merci de le mettre à jour en utilisant le bouton 'Saisir / Modifier mon numéro'."
+            )
+            await interaction.response.edit_message(content=f"✅ {member_to_report.display_name} a été notifié(e).", view=None)
+        except discord.Forbidden:
+            await interaction.response.edit_message(content="❌ Erreur : Je n'ai pas les permissions d'envoyer un message dans le salon de signalement.", view=None)
+
+# --- Vue pour l'annuaire (Mise à jour) ---
+class AnnuaireView(View):
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
-    async def update_number_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(AnnuaireModal())
-
+    async def update_number_button(self, i: discord.Interaction, b: Button): await i.response.send_modal(AnnuaireModal())
     @discord.ui.button(label="Signaler numéro invalide", style=discord.ButtonStyle.danger, custom_id="report_annuaire_number")
-    async def report_number_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
+    async def report_number_button(self, i: discord.Interaction, b: Button):
+        await i.response.send_message(view=ReportSelectView(), ephemeral=True)
 
 # --- Commande !annuaire ---
 @bot.command(name="annuaire")
-async def annuaire(ctx):
-    await ctx.send(embed=create_annuaire_embed(), view=AnnuaireView())
+async def annuaire(ctx): await ctx.send(embed=create_annuaire_embed(), view=AnnuaireView())
 
 
 # =================================================================================
@@ -315,7 +309,7 @@ async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
     bot.add_view(StockView())
     bot.add_view(LocationsView())
-    bot.add_view(AnnuaireView()) # Ajoute la persistance pour la nouvelle vue
+    bot.add_view(AnnuaireView())
 
 # --- Lancement du bot ---
 if TOKEN:
