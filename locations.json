@@ -4,37 +4,17 @@
             "image_url": "URL_DE_VOTRE_IMAGE_ICI",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                },
-                "POMPE 2": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                },
-                "POMPE 3": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                }
+                "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
+                "Pompe 2": { "gazole": 0, "sp95": 0, "sp98": 0 },
+                "Pompe 3": { "gazole": 0, "sp95": 0, "sp98": 0 }
             }
         },
         "Station de Ligoudou": {
             "image_url": "URL_DE_VOTRE_IMAGE_ICI",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                },
-                "POMPE 2": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                }
+                "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
+                "Pompe 2": { "gazole": 0, "sp95": 0, "sp98": 0 }
             }
         }
     },
@@ -43,22 +23,14 @@
             "image_url": "",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                }
+                "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 }
             }
         },
         "Port de Ligoudou": {
             "image_url": "",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                }
+                "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 }
             }
         }
     },
@@ -67,9 +39,7 @@
             "image_url": "",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": {
-                    "kerosene": 0
-                }
+                "Pompe 1": { "kerosene": 0 }
             }
         }
     }
