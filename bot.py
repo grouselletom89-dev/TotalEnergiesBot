@@ -74,7 +74,6 @@ def create_embed():
         inline=False
     )
 
-    # Chaîne de texte corrigée (SyntaxError: ff au lieu de f)
     total_text = (
         f"• Pétrole non raffiné : **{total['petrole_non_raffine']}**\n"
         f"• Gazole : **{total['gazole']}**\n"
@@ -94,17 +93,15 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CORRECTION CRITIQUE FINALE: Utilisation des arguments positionnels stricts (sans aucun argument nommé sauf l'initialisation implicite)
+        # CORRECTION FINALE: SEULEMENT 2 arguments positionnels (label, custom_id)
         self.add_item(TextInput(
-            "Type de carburant (ex: gazole)", # 1er argument positionnel (label)
-            "type_carburant", # 2ème argument positionnel (custom_id)
-            discord.TextStyle.short # 3ème argument positionnel (style)
+            "Type de carburant (ex: gazole)", # 1er argument (label)
+            "type_carburant" # 2ème argument (custom_id)
         ))
         
         self.add_item(TextInput(
-            "Quantité (ex: 100)", # 1er argument positionnel (label)
-            "quantite_stock", # 2ème argument positionnel (custom_id)
-            discord.TextStyle.short # 3ème argument positionnel (style)
+            "Quantité (ex: 100)", # 1er argument (label)
+            "quantite_stock" # 2ème argument (custom_id)
         ))
 
 
