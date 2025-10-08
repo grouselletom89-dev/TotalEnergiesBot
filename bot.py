@@ -94,20 +94,20 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CORRECTION CRITIQUE: Retire 'label=' pour utiliser l'argument positionnel
-        # et éviter le 'unexpected keyword argument label'.
+        # CORRECTION FINALE: Utilisation des arguments positionnels (label, custom_id) 
+        # pour la compatibilité maximale.
         self.add_item(TextInput(
-            "Type de carburant", # Passé comme argument positionnel (label)
-            custom_id="type_carburant",
-            placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine",
-            style=discord.TextStyle.short
+            "Type de carburant", # 1er argument positionnel (label)
+            "type_carburant", # 2ème argument positionnel (custom_id)
+            style=discord.TextStyle.short,
+            placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine"
         ))
         
         self.add_item(TextInput(
-            "Quantité", # Passé comme argument positionnel (label)
-            custom_id="quantite_stock",
-            placeholder="ex : 100",
-            style=discord.TextStyle.short
+            "Quantité", # 1er argument positionnel (label)
+            "quantite_stock", # 2ème argument positionnel (custom_id)
+            style=discord.TextStyle.short,
+            placeholder="ex : 100"
         ))
 
 
