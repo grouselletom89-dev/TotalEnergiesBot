@@ -9,10 +9,9 @@ import pytz
 
 # --- DÉFINITION DU BOT ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
-# --- MODIFIÉ : On active les "members intents" ---
 intents = discord.Intents.default()
 intents.message_content = True 
-intents.members = True # Cette ligne est nécessaire pour trouver les membres
+intents.members = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- CONFIGURATION ---
@@ -204,18 +203,39 @@ def load_annuaire():
 def save_annuaire(data):
     with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
-def create_annuaire_embed():
-    data = load_annuaire()
+# --- MODIFIÉ : L'embed de l'annuaire affiche tous les membres avec le rôle ---
+async def create_annuaire_embed(guild: discord.Guild):
+    saved_data = load_annuaire()
     embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
+    
     role_order = {"Patron": "👑", "Co-Patron": "⭐", "Chefs d'équipe": "📋", "Employés": "👨‍💼"}
+
     for role_name, icon in role_order.items():
-        entries = data.get(role_name, [])
-        if not entries: continue
+        # Trouve le rôle sur le serveur
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            continue
+
+        # Récupère tous les membres ayant ce rôle
+        members_with_role = role.members
+        if not members_with_role:
+            continue
+
         value_str = ""
-        for entry in entries:
-            number = entry.get("number")
-            value_str += f"• {entry['name']} → {'`' + number + '`' if number else '❌ Non renseigné'}\n"
-        embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
+        # Trie les membres par leur nom d'affichage
+        for member in sorted(members_with_role, key=lambda m: m.display_name):
+            # Cherche si on a un numéro sauvegardé pour ce membre
+            number = None
+            for entry in saved_data.get(role_name, []):
+                if entry['id'] == member.id:
+                    number = entry.get('number')
+                    break
+            
+            value_str += f"• {member.display_name} → {'`' + number + '`' if number else ' Pas encore renseigné'}\n"
+        
+        if value_str:
+            embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
+
     embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
     return embed
 
@@ -224,17 +244,24 @@ class AnnuaireModal(Modal, title="Mon numéro de téléphone"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data, user, number = load_annuaire(), interaction.user, self.phone_number.value.strip()
+        
+        # Supprime l'ancienne entrée de l'utilisateur
         for role_group in data.values():
             role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
+            
         role_priority = ["Patron", "Co-Patron", "Chefs d'équipe", "Employés"]
         user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), None)
+        
         if user_role_name and number:
-            data[user_role_name].append({"id": user.id, "name": user.display_name, "number": number})
+            data.setdefault(user_role_name, []).append({"id": user.id, "name": user.display_name, "number": number})
+            
         save_annuaire(data)
+        
         try:
             async for message in interaction.channel.history(limit=100):
                 if message.author == bot.user and message.embeds and message.embeds[0].title == "📞 Annuaire Téléphonique":
-                    await message.edit(embed=create_annuaire_embed()); break
+                    await message.edit(embed=await create_annuaire_embed(interaction.guild))
+                    break
             await interaction.followup.send("✅ Ton numéro a été mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("✅ Ton numéro est sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
 
@@ -246,40 +273,32 @@ class ReportSelectView(View):
         if len(all_users) > 25: all_users = all_users[:25]; placeholder = "Qui veux-tu signaler ? (25 premiers)"
         if not all_users: all_users.append(SelectOption(label="Personne dans l'annuaire", value="disabled"))
         self.user_select = Select(placeholder=placeholder, options=all_users)
-        
         async def select_callback(interaction: discord.Interaction):
-            await interaction.response.defer() # Accuser réception immédiatement
+            await interaction.response.defer(ephemeral=True)
             user_id_to_report = interaction.data["values"][0]
-            if user_id_to_report == "disabled": await interaction.edit_original_response(content="Action annulée.", view=None); return
-            if REPORT_CHANNEL_ID == 123456789012345678: await interaction.edit_original_response(content="❌ Erreur : L'ID du salon de signalement n'est pas configuré.", view=None); return
-            
+            if user_id_to_report == "disabled": await interaction.followup.send("Action annulée.", ephemeral=True); return
+            if REPORT_CHANNEL_ID == 123456789012345678: await interaction.followup.send("❌ Erreur : L'ID du salon de signalement n'est pas configuré.", ephemeral=True); return
             report_channel = bot.get_channel(REPORT_CHANNEL_ID)
-            if not report_channel: await interaction.edit_original_response(content="❌ Erreur : Salon de signalement non trouvé.", view=None); return
-            
+            if not report_channel: await interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
             try:
-                # --- MODIFIÉ : On utilise fetch_member au lieu de get_member ---
                 member_to_report = await interaction.guild.fetch_member(int(user_id_to_report))
                 await report_channel.send(f"Bonjour {member_to_report.mention}, ton numéro dans l'annuaire semble incorrect. Merci de le mettre à jour.")
-                await interaction.edit_original_response(content=f"✅ {member_to_report.display_name} a été notifié(e).", view=None)
-            except discord.NotFound:
-                await interaction.edit_original_response(content="❌ Erreur : Ce membre n'a pas pu être trouvé sur le serveur.", view=None)
-            except discord.Forbidden:
-                await interaction.edit_original_response(content="❌ Erreur: Permissions manquantes pour envoyer un message.", view=None)
-        
-        self.user_select.callback = select_callback
-        self.add_item(self.user_select)
+                await interaction.followup.send(f"✅ {member_to_report.display_name} a été notifié(e).", ephemeral=True)
+            except discord.NotFound: await interaction.followup.send("❌ Erreur : Ce membre n'a pas pu être trouvé sur le serveur.", ephemeral=True)
+            except discord.Forbidden: await interaction.followup.send("❌ Erreur: Permissions manquantes pour envoyer un message.", ephemeral=True)
+        self.user_select.callback = select_callback; self.add_item(self.user_select)
 
 class AnnuaireView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
     async def update_number_button(self, i: discord.Interaction, b: Button): await i.response.send_modal(AnnuaireModal())
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_annuaire")
-    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_annuaire_embed(), view=self)
+    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=await create_annuaire_embed(i.guild), view=self)
     @discord.ui.button(label="Signaler numéro invalide", style=discord.ButtonStyle.danger, custom_id="report_annuaire_number")
     async def report_number_button(self, i: discord.Interaction, b: Button): await i.response.send_message(view=ReportSelectView(), ephemeral=True)
 
 @bot.command(name="annuaire")
-async def annuaire(ctx): await ctx.send(embed=create_annuaire_embed(), view=AnnuaireView())
+async def annuaire(ctx): await ctx.send(embed=await create_annuaire_embed(ctx.guild), view=AnnuaireView())
 
 
 # =================================================================================
