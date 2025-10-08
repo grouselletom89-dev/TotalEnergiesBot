@@ -22,49 +22,25 @@ LOCATIONS_PATH = "/data/locations.json"
 
 # --- Fonctions Utilitaires pour !stocks ---
 def load_stocks():
-    """Charge les données de stocks depuis le volume persistant."""
     try:
-        with open(STOCKS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return get_default_stocks()
+        with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
+    except FileNotFoundError: return get_default_stocks()
 
 def save_stocks(data):
-    """Sauvegarde les données de stocks dans le volume persistant."""
-    with open(STOCKS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+    with open(STOCKS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
 def get_default_stocks():
-    """Retourne la structure de stock par défaut et la sauvegarde si le fichier n'existe pas."""
-    default_data = {
-        "entrepot": {"petrole_non_raffine": 0},
-        "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}
-    }
-    save_stocks(default_data)
-    return default_data
+    default_data = {"entrepot": {"petrole_non_raffine": 0}, "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}}
+    save_stocks(default_data); return default_data
 
 # --- Embed pour !stocks ---
 def create_stocks_embed():
-    """Crée et retourne l'embed pour la commande !stocks."""
     data = load_stocks()
     embed = discord.Embed(title="⛽ Suivi des stocks - TotalEnergies", color=0xFF7900)
-    embed.add_field(
-        name="📦 Entrepôt",
-        value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '),
-        inline=False
-    )
+    embed.add_field(name="📦 Entrepôt", value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
     total = data.get('total', {})
-    embed.add_field(
-        name="📊 Total des produits finis",
-        value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '),
-        inline=False
-    )
-    carburants_text = (
-        f"Gazole: **{total.get('gazole', 0):,}** | "
-        f"SP95: **{total.get('sp95', 0):,}** | "
-        f"SP98: **{total.get('sp98', 0):,}** | "
-        f"Kérosène: **{total.get('kerosene', 0):,}**"
-    ).replace(',', ' ')
+    embed.add_field(name="📊 Total des produits finis", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
+    carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
     embed.set_footer(text=f"Dernière mise à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
@@ -78,14 +54,11 @@ class StockModal(Modal):
     nouvelle_quantite = TextInput(label="Nouvelle quantité totale", placeholder="Ex: 5000")
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        try:
-            quantite = int(self.nouvelle_quantite.value)
-            if quantite < 0: await interaction.followup.send("⚠️ La quantité ne peut pas être négative.", ephemeral=True); return
-        except ValueError: await interaction.followup.send("⚠️ La quantité doit être un nombre entier.", ephemeral=True); return
-        data = load_stocks()
-        if self.category in data and self.carburant in data[self.category]:
-            data[self.category][self.carburant] = quantite; save_stocks(data)
-        else: await interaction.followup.send("❌ Erreur, catégorie ou carburant introuvable.", ephemeral=True); return
+        try: quantite = int(self.nouvelle_quantite.value)
+        except ValueError: await interaction.followup.send("⚠️ La quantité doit être un nombre.", ephemeral=True); return
+        data=load_stocks()
+        if self.category in data and self.carburant in data[self.category]: data[self.category][self.carburant] = quantite; save_stocks(data)
+        else: await interaction.followup.send("❌ Erreur, catégorie/carburant introuvable.", ephemeral=True); return
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_stocks_embed())
@@ -94,8 +67,7 @@ class StockModal(Modal):
 
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
-        super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category
-        self.populate_options()
+        super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category; self.populate_options()
     def populate_options(self):
         data, fuels = load_stocks(), list(data.get(self.category, {}).keys()); options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]
         select_menu = self.children[0]
@@ -155,32 +127,46 @@ def save_locations(data):
     """Sauvegarde les données des stations dans le volume persistant."""
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
-# --- Embed pour !stations ---
+# --- CORRIGÉ : L'embed pour la commande !stations ---
 def create_locations_embed():
     data = load_locations()
-    embed = discord.Embed(title="⛽ Statut des pompes", color=0x3498db)
-    categories = {"stations": "Stations", "ports": "Ports", "aeroport": "Aéroport"}
+    embed = discord.Embed(
+        title="⛽ Statut des pompes",
+        color=0x3498db
+    )
+    
+    categories = {
+        "stations": " Stations",
+        "ports": " Ports",
+        "aeroport": " Aéroport"
+    }
+
+    # Ajoute un champ vide au début pour l'espacement
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+    
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
         if not locations: continue
-        # Ajoute un espaceur sauf pour la première catégorie
-        if list(categories.keys()).index(cat_key) > 0:
-            embed.add_field(name="\u200b", value="\u200b", inline=False)
         
-        embed.add_field(name=f"**{cat_name.upper()}**", value="", inline=False)
+        embed.add_field(name=f"**{cat_name.upper()}**", value="\u200b", inline=False)
         
-        for i, (loc_name, loc_data) in enumerate(locations.items()):
+        # On parcourt les lieux pour les ajouter en colonnes
+        for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
-                pump_text += f"**{pump_name}**\n"
-                for fuel, qty in pump_fuels.items(): pump_text += f"› {fuel.capitalize()}: {qty:,}L\n".replace(',', ' ')
+                pump_text += f"🔧 **{pump_name}**\n"
+                for fuel, qty in pump_fuels.items():
+                    pump_text += f"› {fuel.capitalize()}: {qty:,}L\n".replace(',', ' ')
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
             embed.add_field(name=loc_name, value=pump_text, inline=True)
         
         # Ajoute un champ vide si le nombre de lieux est impair pour garder l'alignement
         if len(locations) % 2 != 0:
             embed.add_field(name="\u200b", value="\u200b", inline=True)
-            
+
+        # Ajoute un espaceur entre les grandes catégories
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+
     return embed
 
 # --- Vues et Modals pour la mise à jour des stations ---
@@ -190,14 +176,14 @@ class LocationUpdateModal(Modal):
         self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
         fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
         for fuel, qty in fuels.items():
-            self.add_item(TextInput(label=f"Nouvelle quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
+            self.add_item(TextInput(label=f"Nouv. qté pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data = load_locations()
         pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
         for field in self.children:
             try: pump_data[field.custom_id] = int(field.value)
-            except ValueError: await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
+            except ValueError: await interaction.followup.send(f"⚠️ La qté pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
         data[self.category_key][self.location_name]["last_updated"] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
         save_locations(data)
         try:
@@ -208,8 +194,7 @@ class LocationUpdateModal(Modal):
 
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
-        super().__init__(timeout=180)
-        self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
+        super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
         pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys())
         options = [SelectOption(label=p) for p in pumps]
         self.children[0].options = options if pumps else [SelectOption(label="Aucune pompe trouvée", value="disabled")]
@@ -256,7 +241,7 @@ async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=Loc
 async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
     bot.add_view(StockView())
-    bot.add_view(LocationsView()) # Ajoute la persistance pour la nouvelle vue
+    bot.add_view(LocationsView())
 
 # --- Lancement du bot ---
 if TOKEN:
