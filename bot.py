@@ -117,9 +117,9 @@ def save_locations(data):
 
 def get_default_locations():
     default_data = {
-        "stations": {"Station de Lampaul": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "ports": {"Port de Lampaul": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "aeroport": {"Aéroport": {"last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}
+        "stations": {"Station de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
+        "ports": {"Port de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
+        "aeroport": {"Aéroport": {"last_updated": "N/A", "pumps": {"POMPE 1": {"kerosene": 0}}}}
     }
     save_locations(default_data); return default_data
 
@@ -128,52 +128,38 @@ def create_locations_embed():
     data = load_locations()
     embed = discord.Embed(title="Statut des pompes", color=0x0099ff)
 
-    # --- Section Stations ---
-    stations = data.get("stations")
-    if stations:
-        embed.add_field(name="⛽ Stations", value="\u200b", inline=False)
-        for loc_name, loc_data in stations.items():
+    categories = {
+        "stations": "🚉 Stations",
+        "ports": "⚓ Ports",
+        "aeroport": "✈️ Aéroport"
+    }
+
+    for cat_key, cat_name in categories.items():
+        locations = data.get(cat_key)
+        if not locations:
+            continue
+        
+        # Titre de la catégorie
+        embed.add_field(name=f"**{cat_name}**", value="\u200b", inline=False)
+        
+        # Contenu
+        for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
-                pump_text += f"🔧 **{pump_name}**\n"
+                pump_text += f"🔧 **{pump_name.upper()}**\n" # POMPE en majuscules
                 for fuel, qty in pump_fuels.items():
                     pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
-            pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
+                pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n" # Ajout d'espace après la date
             embed.add_field(name=loc_name, value=pump_text, inline=True)
-        if len(stations) % 2 != 0:
+        
+        if len(locations) % 2 != 0:
             embed.add_field(name="\u200b", value="\u200b", inline=True)
 
-    # --- Section Ports ---
-    ports = data.get("ports")
-    if ports:
-        embed.add_field(name="\u200b", value="\u200b", inline=False) # Espaceur
-        embed.add_field(name="⚓ Ports", value="\u200b", inline=False)
-        for loc_name, loc_data in ports.items():
-            pump_text = ""
-            for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
-                pump_text += f"🔧 **{pump_name}**\n"
-                for fuel, qty in pump_fuels.items():
-                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
-            pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
-            embed.add_field(name=loc_name, value=pump_text, inline=True)
-        if len(ports) % 2 != 0:
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-    # --- Section Aéroport ---
-    aeroport = data.get("aeroport")
-    if aeroport:
-        embed.add_field(name="\u200b", value="\u200b", inline=False) # Espaceur
-        embed.add_field(name="✈️ Aéroport", value="\u200b", inline=False)
-        for loc_name, loc_data in aeroport.items():
-            pump_text = ""
-            for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
-                pump_text += f"🔧 **{pump_name}**\n"
-                for fuel, qty in pump_fuels.items():
-                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
-            pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
-            embed.add_field(name=loc_name, value=pump_text, inline=True)
+        # Force un grand espace pour créer un bloc distinct
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
             
     return embed
+
 
 class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
@@ -200,7 +186,7 @@ class PumpSelectView(View):
         super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
         pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p) for p in pumps]
         self.children[0].options = options if pumps else [SelectOption(label="Aucune pompe trouvée", value="disabled")]
-    @discord.ui.select(placeholder="Choisis une pompe...", custom_id="locations_pump_selector")
+    @discord.ui.select(placeholder="Choisis une POMPE...", custom_id="locations_pump_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
         if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
@@ -213,7 +199,7 @@ class LocationSelectView(View):
     @discord.ui.select(placeholder="Choisis un lieu...", custom_id="locations_loc_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
         loc_name = select.values[0]
-        if loc_name != "disabled": await i.response.edit_message(content="Choisis une pompe :", view=PumpSelectView(self.category_key, loc_name, self.original_message_id))
+        if loc_name != "disabled": await i.response.edit_message(content="Choisis une POMPE :", view=PumpSelectView(self.category_key, loc_name, self.original_message_id))
 
 class LocationCategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
@@ -225,18 +211,12 @@ class LocationCategorySelectView(View):
     @discord.ui.button(label="Aéroport", style=discord.ButtonStyle.secondary)
     async def aeroport_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "aeroport")
 
-# --- MODIFIÉ : La vue pour !stations avec le bouton Historique supprimé ---
 class LocationsView(View):
-    def __init__(self): 
-        super().__init__(timeout=None)
-
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.primary, custom_id="update_location")
-    async def update_button(self, i: discord.Interaction, b: Button): 
-        await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
-    
+    async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
-    async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(embed=create_locations_embed(), view=self)
+    async def refresh_button(self, interaction: discord.Interaction, button: Button): await interaction.response.edit_message(embed=create_locations_embed(), view=self)
 
 @bot.command(name="stations")
 async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=LocationsView())
