@@ -126,41 +126,52 @@ def get_default_locations():
 # --- CORRIGÉ : L'embed pour la commande !stations avec la bonne mise en page ---
 def create_locations_embed():
     data = load_locations()
-    embed = discord.Embed(title="Statut des pompes", color=0x3498db) # Titre sans emoji pour plus de sobriété
-    
-    categories = {
-        "stations": "🚉 Stations",
-        "ports": "⚓ Ports",
-        "aeroport": "✈️ Aéroport"
-    }
+    embed = discord.Embed(title="Statut des pompes", color=0x0099ff)
 
-    for cat_key, cat_name in categories.items():
-        locations = data.get(cat_key)
-        if not locations:
-            continue
-        
-        # Ajoute le titre de la catégorie, qui sert de début de bloc
-        embed.add_field(name=f"**{cat_name}**", value="\u200b", inline=False)
-        
-        # Ajoute chaque lieu en colonne
-        for loc_name, loc_data in locations.items():
+    # --- Section Stations ---
+    stations = data.get("stations")
+    if stations:
+        embed.add_field(name="⛽ Stations", value="\u200b", inline=False)
+        for loc_name, loc_data in stations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
                 pump_text += f"🔧 **{pump_name}**\n"
-                # Ajout des emojis de pompe à essence pour chaque carburant
                 for fuel, qty in pump_fuels.items():
                     pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
             embed.add_field(name=loc_name, value=pump_text, inline=True)
-        
-        # Si une catégorie a un nombre impair de lieux, on ajoute un champ vide pour l'alignement
-        if len(locations) % 2 != 0:
+        if len(stations) % 2 != 0:
             embed.add_field(name="\u200b", value="\u200b", inline=True)
 
-        # Ajoute un grand espaceur invisible pour créer un bloc séparé avant la prochaine catégorie
-        # Sauf pour la dernière catégorie
-        if cat_key != list(categories.keys())[-1]:
-            embed.add_field(name="\u200b", value="\u200b", inline=False)
+    # --- Section Ports ---
+    ports = data.get("ports")
+    if ports:
+        embed.add_field(name="\u200b", value="\u200b", inline=False) # Espaceur
+        embed.add_field(name="⚓ Ports", value="\u200b", inline=False)
+        for loc_name, loc_data in ports.items():
+            pump_text = ""
+            for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
+                pump_text += f"🔧 **{pump_name}**\n"
+                for fuel, qty in pump_fuels.items():
+                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
+            pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
+            embed.add_field(name=loc_name, value=pump_text, inline=True)
+        if len(ports) % 2 != 0:
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+    # --- Section Aéroport ---
+    aeroport = data.get("aeroport")
+    if aeroport:
+        embed.add_field(name="\u200b", value="\u200b", inline=False) # Espaceur
+        embed.add_field(name="✈️ Aéroport", value="\u200b", inline=False)
+        for loc_name, loc_data in aeroport.items():
+            pump_text = ""
+            for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
+                pump_text += f"🔧 **{pump_name}**\n"
+                for fuel, qty in pump_fuels.items():
+                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
+            pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
+            embed.add_field(name=loc_name, value=pump_text, inline=True)
             
     return embed
 
