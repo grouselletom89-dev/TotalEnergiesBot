@@ -59,9 +59,10 @@ def create_embed():
     embed.set_footer(text=f"Mis à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
     return embed
 
-# --- MODIFIÉ : Le formulaire pour définir la nouvelle quantité ---
+# --- MODIFIÉ : Le formulaire accepte maintenant la catégorie ---
 class StockModal(Modal):
-    def __init__(self, carburant: str, original_message_id: int):
+    def __init__(self, category: str, carburant: str, original_message_id: int):
+        self.category = category # Ajout de la catégorie
         self.carburant = carburant
         self.original_message_id = original_message_id
         super().__init__(title=f"Mettre à jour : {carburant.replace('_', ' ').title()}")
@@ -72,7 +73,7 @@ class StockModal(Modal):
         await interaction.response.defer(ephemeral=True)
         try:
             quantite = int(self.nouvelle_quantite.value)
-            if quantite < 0: # S'assure que la quantité n'est pas négative
+            if quantite < 0:
                 await interaction.followup.send("⚠️ La quantité ne peut pas être négative.", ephemeral=True)
                 return
         except ValueError:
@@ -80,29 +81,25 @@ class StockModal(Modal):
             return
         
         data = load_stocks()
-        target_dict = None
-        if self.carburant in data.get("total", {}):
-            target_dict = data["total"]
-        elif self.carburant in data.get("entrepot", {}):
-            target_dict = data["entrepot"]
         
-        if target_dict is None:
-            await interaction.followup.send("❌ Une erreur est survenue avec ce type de carburant.", ephemeral=True)
+        # --- LOGIQUE CORRIGÉE ---
+        # On cible directement la bonne catégorie ("entrepot" ou "total")
+        if self.category in data and self.carburant in data[self.category]:
+            data[self.category][self.carburant] = quantite
+            save_stocks(data)
+        else:
+            await interaction.followup.send("❌ Une erreur est survenue, catégorie ou carburant introuvable.", ephemeral=True)
             return
-
-        # Définit directement la nouvelle quantité
-        target_dict[self.carburant] = quantite
-        save_stocks(data)
 
         try:
             original_message = await interaction.channel.fetch_message(self.original_message_id)
             if original_message:
                 await original_message.edit(embed=create_embed())
-                await interaction.followup.send(f"✅ Stock de **{self.carburant.replace('_', ' ')}** mis à jour à **{quantite}** !", ephemeral=True)
+                await interaction.followup.send(f"✅ Stock de **{self.carburant.replace('_', ' ')}** dans **{self.category}** mis à jour à **{quantite}** !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden):
             await interaction.followup.send("⚠️ Le panneau principal a été mis à jour, mais n'a pas pu être actualisé automatiquement.", ephemeral=True)
 
-# --- Vue du menu déroulant (légèrement modifiée) ---
+# --- MODIFIÉ : Le menu déroulant transmet la catégorie au formulaire ---
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
         super().__init__(timeout=180)
@@ -127,9 +124,10 @@ class FuelSelectView(View):
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         carburant_choisi = select.values[0]
         if carburant_choisi != "disabled":
-            await interaction.response.send_modal(StockModal(carburant=carburant_choisi, original_message_id=self.original_message_id))
+            # On transmet la catégorie au formulaire
+            await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant_choisi, original_message_id=self.original_message_id))
 
-# --- Vue pour choisir la catégorie (légèrement modifiée) ---
+# --- Vue pour choisir la catégorie (inchangée) ---
 class CategorySelectView(View):
     def __init__(self, original_message_id: int):
         super().__init__(timeout=180)
@@ -147,14 +145,13 @@ class CategorySelectView(View):
     async def total_button(self, interaction: discord.Interaction, button: Button):
         await self.show_fuel_select(interaction, "total")
 
-# --- MODIFIÉ : La vue principale avec un seul bouton "Mettre à jour" ---
+# --- Vue principale avec un seul bouton "Mettre à jour" ---
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
     async def update_button(self, interaction: discord.Interaction, button: Button):
-        # Ouvre directement la vue pour choisir la catégorie
         await interaction.response.send_message(
             content="Dans quelle catégorie souhaites-tu mettre à jour un stock ?",
             view=CategorySelectView(original_message_id=interaction.message.id), 
