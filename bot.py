@@ -25,27 +25,37 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ... (Après bot = commands.Bot(...))
 
 # Ajoutez cette fonction pour que le bot soit prêt et enregistre les vues
-@bot.event
-async def on_ready():
-    print(f'Bot connecté sous le nom : {bot.user.name}')
-    
-    # Enregistre la vue pour s'assurer que les interactions sont gérées
-    bot.add_view(StockView()) 
+## Fonctions Utilitaires (Load/Save)
 
-# --- Gestion des stocks --- (Votre code continue ici)
 def load_stocks():
-    # ...
-
-# --- Gestion des stocks ---
-def load_stocks():
-    with open("stocks.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    # Votre nouveau code avec gestion du FileNotFoundError ici
+    try:
+        with open("stocks.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "entrepot": {"petrole_non_raffine": 0},
+            "total": {
+                "petrole_non_raffine": 0,
+                "gazole": 0,
+                "sp95": 0,
+                "sp98": 0,
+                "kerosene": 0
+            }
+        }
 
 
 def save_stocks(data):
     with open("stocks.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+
+## Événements Discord
+@bot.event
+async def on_ready():
+    print(f'Bot connecté sous le nom : {bot.user.name}')
+    # L'enregistrement de la vue se fait ici
+    bot.add_view(StockView())
 
 # --- Embed principal ---
 def create_embed():
