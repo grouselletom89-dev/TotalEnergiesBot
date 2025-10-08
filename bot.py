@@ -39,16 +39,16 @@ def create_embed():
     embed = discord.Embed(title="🏭 Suivi des stocks", color=discord.Color.orange())
     embed.add_field(
         name="📦 Entrepôt",
-        value=f"• Pétrole non raffiné : **{data['entrepot']['petrole_non_raffine']}**",
+        value=f"• Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0)}**",
         inline=False
     )
-    total = data['total']
+    total = data.get('total', {})
     total_text = (
-        f"• Pétrole non raffiné : **{total['petrole_non_raffine']}**\n"
-        f"• Gazole : **{total['gazole']}**\n"
-        f"• SP 95 : **{total['sp95']}**\n"
-        f"• SP 98 : **{total['sp98']}**\n"
-        f"• Kérosène : **{total['kerosene']}**"
+        f"• Pétrole non raffiné : **{total.get('petrole_non_raffine', 0)}**\n"
+        f"• Gazole : **{total.get('gazole', 0)}**\n"
+        f"• SP 95 : **{total.get('sp95', 0)}**\n"
+        f"• SP 98 : **{total.get('sp98', 0)}**\n"
+        f"• Kérosène : **{total.get('kerosene', 0)}**"
     )
     embed.add_field(name="📊 Total", value=total_text, inline=False)
     embed.set_footer(text=f"Mis à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
@@ -64,19 +64,17 @@ class StockModal(Modal):
     quantite_stock = TextInput(label="Quantité", placeholder="Ex: 100")
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Valide que la quantité est un nombre
         try:
             quantite = int(self.quantite_stock.value)
         except ValueError:
             await interaction.response.send_message("⚠️ La quantité doit être un nombre entier.", ephemeral=True)
             return
         
-        # Charge les données, applique la modification et sauvegarde
         data = load_stocks()
         target_dict = None
-        if self.carburant in data["total"]:
+        if self.carburant in data.get("total", {}):
             target_dict = data["total"]
-        elif self.carburant in data["entrepot"]:
+        elif self.carburant in data.get("entrepot", {}):
             target_dict = data["entrepot"]
         
         if target_dict is None:
@@ -89,34 +87,40 @@ class StockModal(Modal):
             target_dict[self.carburant] = max(0, target_dict[self.carburant] - quantite)
 
         save_stocks(data)
-
-        # Envoie une seule et unique réponse pour éviter l'échec de l'interaction
         await interaction.response.send_message(f"✅ Stock de **{self.carburant.replace('_', ' ')}** mis à jour !", ephemeral=True)
-        # L'utilisateur peut cliquer sur "Rafraîchir" sur le panneau principal pour voir les changements.
 
-# --- Vue avec le menu déroulant ---
+# --- Vue avec le menu déroulant (CORRIGÉE) ---
 class FuelSelectView(View):
     def __init__(self, action: str):
         super().__init__(timeout=180)
         self.action = action
-        self.add_item(self.fuel_select())
+        self.populate_options()
 
-    def fuel_select(self):
+    def populate_options(self):
+        """Peuple le menu déroulant avec les options du fichier JSON."""
         data = load_stocks()
-        all_fuels = list(data['entrepot'].keys()) + list(data['total'].keys())
+        all_fuels = list(data.get('entrepot', {}).keys()) + list(data.get('total', {}).keys())
+        
         options = [
             SelectOption(label=fuel.replace("_", " ").title(), value=fuel)
             for fuel in sorted(list(set(all_fuels)))
         ]
-        return Select(
-            placeholder="Choisis le type de carburant...",
-            options=options,
-            custom_id="fuel_selector"
-        )
+        
+        # S'assure qu'il y a au moins une option pour éviter l'erreur
+        if not options:
+            options.append(SelectOption(label="Aucun carburant trouvé", value="disabled", default=True))
+        
+        # Récupère le composant Select et met à jour ses options
+        select_menu = discord.utils.get(self.children, custom_id="fuel_selector")
+        select_menu.options = options
+        select_menu.disabled = not all_fuels # Désactive le menu si la liste est vide
 
-    @discord.ui.select(custom_id="fuel_selector")
+    @discord.ui.select(placeholder="Choisis le type de carburant...", custom_id="fuel_selector", min_values=1, max_values=1)
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         carburant_choisi = select.values[0]
+        if carburant_choisi == "disabled":
+            await interaction.response.defer()
+            return
         await interaction.response.send_modal(StockModal(action=self.action, carburant=carburant_choisi))
 
 # --- Vue principale avec les boutons ---
