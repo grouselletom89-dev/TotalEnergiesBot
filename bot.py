@@ -22,6 +22,19 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- Fin de la partie corrigée ---
 
+# ... (Après bot = commands.Bot(...))
+
+# Ajoutez cette fonction pour que le bot soit prêt et enregistre les vues
+@bot.event
+async def on_ready():
+    print(f'Bot connecté sous le nom : {bot.user.name}')
+    
+    # Enregistre la vue pour s'assurer que les interactions sont gérées
+    bot.add_view(StockView()) 
+
+# --- Gestion des stocks --- (Votre code continue ici)
+def load_stocks():
+    # ...
 
 # --- Gestion des stocks ---
 def load_stocks():
