@@ -119,25 +119,34 @@ def load_locations():
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 def get_default_locations():
-    default_data = {"stations": {"Station de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"last_updated": "N/A", "pumps": {"POMPE 1": {"kerosene": 0}}}}}
+    default_data = {
+        "stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
+        "ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
+        "aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"kerosene": 0}}}}
+    }
     save_locations(default_data); return default_data
-def create_locations_embed():
-    data = load_locations(); embed = discord.Embed(title="Statut des pompes", color=0x0099ff)
+
+def create_locations_embeds():
+    data = load_locations()
+    embeds = []
     categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
         if not locations: continue
-        embed.add_field(name=f"**{cat_name}**", value="\u200b", inline=False)
+        cat_embed = discord.Embed(title=f"**{cat_name}**", color=0x0099ff)
+        image_set = False
         for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
                 pump_text += f"🔧 **{pump_name.upper()}**\n"
                 for fuel, qty in pump_fuels.items(): pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
-            embed.add_field(name=loc_name, value=pump_text, inline=True)
-        if len(locations) % 2 != 0: embed.add_field(name="\u200b", value="\u200b", inline=True)
-        if cat_key != list(categories.keys())[-1]: embed.add_field(name="\u200b", value="\u200b", inline=False)
-    return embed
+            cat_embed.add_field(name=loc_name, value=pump_text, inline=True)
+            if loc_data.get("image_url") and not image_set:
+                cat_embed.set_image(url=loc_data.get("image_url")); image_set = True
+        if len(locations) % 2 != 0: cat_embed.add_field(name="\u200b", value="\u200b", inline=True)
+        embeds.append(cat_embed)
+    return embeds
 class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
         super().__init__(title=f"{pump_name} - {location_name}"); self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
@@ -151,7 +160,7 @@ class LocationUpdateModal(Modal):
         data[self.category_key][self.location_name]["last_updated"] = get_paris_time(); save_locations(data)
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
-            if msg: await msg.edit(embed=create_locations_embed())
+            if msg: await msg.edit(embeds=create_locations_embeds())
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais actualisation auto. échouée.", ephemeral=True)
 class PumpSelectView(View):
@@ -169,9 +178,14 @@ class LocationSelectView(View):
         locations = list(load_locations().get(category_key, {}).keys()); options = [SelectOption(label=loc) for loc in locations]
         self.children[0].options = options if locations else [SelectOption(label="Aucun lieu trouvé", value="disabled")]
     @discord.ui.select(placeholder="Choisis un lieu...", custom_id="locations_loc_selector")
-    async def select_callback(self, i: discord.Interaction, select: Select):
+    async def select_callback(self, interaction: discord.Interaction, select: Select):
         loc_name = select.values[0]
-        if loc_name != "disabled": await i.response.edit_message(content="Choisis une POMPE :", view=PumpSelectView(self.category_key, loc_name, self.original_message_id))
+        if loc_name == "disabled": await interaction.response.edit_message(content="Action annulée.", view=None); return
+        pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id)
+        data = load_locations(); image_url = data.get(self.category_key, {}).get(loc_name, {}).get("image_url")
+        embed = None
+        if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
+        await interaction.response.edit_message(content="Choisis une pompe :", view=pump_view, embed=embed)
 class LocationCategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_location_select(self, i: discord.Interaction, cat_key: str): await i.response.edit_message(content="Choisis un lieu :", view=LocationSelectView(cat_key, self.original_message_id))
@@ -186,15 +200,14 @@ class LocationsView(View):
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.primary, custom_id="update_location")
     async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
-    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_locations_embed(), view=self)
+    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embeds=create_locations_embeds(), view=self)
 @bot.command(name="stations")
-async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=LocationsView())
+async def stations(ctx): await ctx.send(embeds=create_locations_embeds(), view=LocationsView())
 
 
 # =================================================================================
 # SECTION 3 : LOGIQUE POUR LA COMMANDE !ANNUAIRE
 # =================================================================================
-
 def load_annuaire():
     try:
         with open(ANNUAIRE_PATH, "r", encoding="utf-8") as f: return json.load(f)
@@ -203,10 +216,8 @@ def load_annuaire():
         save_annuaire(default_data); return default_data
 def save_annuaire(data):
     with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
-
 async def create_annuaire_embed(guild: discord.Guild):
-    saved_data = load_annuaire()
-    embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
+    saved_data = load_annuaire(); embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
     role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
     role_icons = {"Patron": "👑", "Co-Patron": "⭐", "Chef d'équipe": "📋", "Employé": "👨‍💼"}
     grouped_members = {role_name: [] for role_name in role_priority}
@@ -222,24 +233,15 @@ async def create_annuaire_embed(guild: discord.Guild):
             number = next((user.get('number') for users in saved_data.values() for user in users if user['id'] == member.id), None)
             value_str += f"• {member.display_name} → {'`' + number + '`' if number else ' Pas encore renseigné'}\n"
         if value_str: embed.add_field(name=f"{role_icons[role_name]} {role_name}", value=value_str, inline=False)
-    embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
-    return embed
-
-# --- MODIFIÉ : Le label du formulaire est plus court ---
+    embed.set_footer(text=f"Mis à jour le {get_paris_time()}"); return embed
 class AnnuaireModal(Modal):
     def __init__(self, current_number: str = ""):
         super().__init__(title="Mon numéro de téléphone")
-        self.phone_number = TextInput(
-            label="Ton numéro (laisse vide pour supprimer)", # Label raccourci
-            placeholder="Ex: 0612345678",
-            required=False,
-            default=current_number
-        )
-        self.add_item(self.phone_number)
-
+        self.add_item(TextInput(label="Ton numéro (laisse vide pour supprimer)", placeholder="Ex: 0612345678", required=False, default=current_number))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data, user, number = load_annuaire(), interaction.user, self.phone_number.value.strip()
+        number = self.children[0].value.strip()
+        data, user = load_annuaire(), interaction.user
         for role_group in data.values():
             role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
         role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
@@ -253,90 +255,62 @@ class AnnuaireModal(Modal):
                     await message.edit(embed=await create_annuaire_embed(interaction.guild)); break
             await interaction.followup.send("✅ Ton numéro a été mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("✅ Ton numéro est sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
-
 class AnnuaireView(View):
-    def __init__(self): 
-        super().__init__(timeout=None)
-
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
     async def update_number_button(self, interaction: discord.Interaction, button: Button):
         data = load_annuaire()
         current_number = next((user.get('number', '') for group in data.values() for user in group if user['id'] == interaction.user.id), "")
         await interaction.response.send_modal(AnnuaireModal(current_number=current_number))
-    
     @discord.ui.button(label="Demander d'actualiser", style=discord.ButtonStyle.secondary, custom_id="request_annuaire_update")
     async def request_update_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
-        saved_data = load_annuaire()
-        all_registered_ids = {user['id'] for group in saved_data.values() for user in group if user.get('number')}
-        role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
-        options = []
+        saved_data = load_annuaire(); all_registered_ids = {user['id'] for group in saved_data.values() for user in group if user.get('number')}
+        role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]; options = []
         for role_name in role_priority:
             role = discord.utils.get(interaction.guild.roles, name=role_name)
             if role:
                 for member in role.members:
                     if not member.bot and member.id not in all_registered_ids:
                         options.append(SelectOption(label=member.display_name, value=str(member.id)))
-        options = list({opt.value: opt for opt in options}.values())
-        placeholder = "Qui notifier pour renseigner son numéro ?"
+        options = list({opt.value: opt for opt in options}.values()); placeholder = "Qui notifier pour renseigner son numéro ?"
         if len(options) > 25: options = options[:25]; placeholder = "Qui notifier ? (25 premiers)"
-        if not options:
-            await interaction.followup.send("🎉 Tout le monde a renseigné son numéro !", ephemeral=True)
-            return
-
+        if not options: await interaction.followup.send("🎉 Tout le monde a renseigné son numéro !", ephemeral=True); return
         select_menu = Select(placeholder=placeholder, options=options)
         async def select_callback(select_interaction: discord.Interaction):
-            await select_interaction.response.defer(ephemeral=True)
-            user_id_to_notify = select_interaction.data["values"][0]
+            await select_interaction.response.defer(ephemeral=True); user_id_to_notify = select_interaction.data["values"][0]
             report_channel = bot.get_channel(REPORT_CHANNEL_ID)
-            if not report_channel:
-                await select_interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
+            if not report_channel: await select_interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
             try:
                 member_to_notify = await select_interaction.guild.fetch_member(int(user_id_to_notify))
                 annuaire_link = f"https://discord.com/channels/{select_interaction.guild.id}/{ANNUAIRE_CHANNEL_ID}"
-                await report_channel.send(f"Bonjour {member_to_notify.mention}, il semble que tu n'aies pas encore renseigné ton numéro dans l'annuaire. Merci de le faire ici : {annuaire_link}")
+                await report_channel.send(f"Bonjour {member_to_notify.mention}, il semble que tu n'aies pas encore renseigné ton numéro. Merci de le faire ici : {annuaire_link}")
                 await select_interaction.edit_original_response(content=f"✅ {member_to_notify.display_name} a été notifié(e).", view=None)
-            except (discord.NotFound, discord.Forbidden):
-                await select_interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
-
-        select_menu.callback = select_callback
-        temp_view = View(timeout=180); temp_view.add_item(select_menu)
+            except (discord.NotFound, discord.Forbidden): await select_interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
+        select_menu.callback = select_callback; temp_view = View(timeout=180); temp_view.add_item(select_menu)
         await interaction.followup.send(view=temp_view, ephemeral=True)
-
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_annuaire")
-    async def refresh_button(self, i: discord.Interaction, b: Button): 
-        await i.response.edit_message(embed=await create_annuaire_embed(i.guild), view=self)
-
+    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=await create_annuaire_embed(i.guild), view=self)
     @discord.ui.button(label="Signaler numéro invalide", style=discord.ButtonStyle.danger, custom_id="report_annuaire_number")
     async def report_number_button(self, interaction: discord.Interaction, b: Button):
         await interaction.response.defer(ephemeral=True)
-        saved_data = load_annuaire()
-        all_users = [SelectOption(label=u['name'], value=str(u['id'])) for rg in saved_data.values() for u in rg if u.get('number')]
-        placeholder = "Qui veux-tu signaler ?"
+        saved_data = load_annuaire(); all_users = [SelectOption(label=u['name'], value=str(u['id'])) for rg in saved_data.values() for u in rg if u.get('number')]
+        placeholder = "Qui veux-tu signaler ?";
         if len(all_users) > 25: all_users = all_users[:25]; placeholder = "Qui veux-tu signaler ? (25 premiers)"
-        if not all_users:
-            await interaction.followup.send("Personne n'a de numéro à signaler pour l'instant.", ephemeral=True)
-            return
-
+        if not all_users: await interaction.followup.send("Personne n'a de numéro à signaler pour l'instant.", ephemeral=True); return
         select_menu = Select(placeholder=placeholder, options=all_users)
         async def select_callback(select_interaction: discord.Interaction):
-            await select_interaction.response.defer(ephemeral=True)
-            user_id_to_report = select_interaction.data["values"][0]
+            await select_interaction.response.defer(ephemeral=True); user_id_to_report = select_interaction.data["values"][0]
             report_channel = bot.get_channel(REPORT_CHANNEL_ID)
-            if not report_channel:
-                await select_interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
+            if not report_channel: await select_interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
             try:
                 member_to_report = await select_interaction.guild.fetch_member(int(user_id_to_report))
                 annuaire_link = f"https://discord.com/channels/{select_interaction.guild.id}/{ANNUAIRE_CHANNEL_ID}"
                 await report_channel.send(f"Bonjour {member_to_report.mention}, ton numéro dans l'annuaire semble incorrect. Merci de le mettre à jour ici : {annuaire_link}")
                 await select_interaction.edit_original_response(content=f"✅ {member_to_report.display_name} a été notifié(e).", view=None)
-            except (discord.NotFound, discord.Forbidden):
-                await select_interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
-        
-        select_menu.callback = select_callback
-        temp_view = View(timeout=180); temp_view.add_item(select_menu)
+            except (discord.NotFound, discord.Forbidden): await select_interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
+        select_menu.callback = select_callback; temp_view = View(timeout=180); temp_view.add_item(select_menu)
         await interaction.followup.send(view=temp_view, ephemeral=True)
-
 @bot.command(name="annuaire")
 async def annuaire(ctx): await ctx.send(embed=await create_annuaire_embed(ctx.guild), view=AnnuaireView())
 
