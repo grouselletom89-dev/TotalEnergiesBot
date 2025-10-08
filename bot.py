@@ -76,7 +76,7 @@ def create_embed():
 
     total_text = (
         f"• Pétrole non raffiné : **{total['petrole_non_raffine']}**\n"
-        ff"• Gazole : **{total['gazole']}**\n"
+        f"• Gazole : **{total['gazole']}**\n"
         f"• SP 95 : **{total['sp95']}**\n"
         f"• SP 98 : **{total['sp98']}**\n"
         f"• Kérosène : **{total['kerosene']}**"
