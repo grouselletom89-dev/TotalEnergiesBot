@@ -52,7 +52,7 @@ def create_embed():
     
     # --- Section Entrepôt ---
     embed.add_field(
-        name="📦 Entrepôt",
+        name="📦 ENTREPÔT",
         value=f"**Pétrole non raffiné** : {data.get('entrepot', {}).get('petrole_non_raffine', 0):,}".replace(',', ' '),
         inline=False
     )
@@ -60,7 +60,7 @@ def create_embed():
     # --- Section Total ---
     total = data.get('total', {})
     embed.add_field(
-        name="📊 Total des produits finis",
+        name="📊 STOCKAGE",
         value=f"**Pétrole non raffiné** : {total.get('petrole_non_raffine', 0):,}".replace(',', ' '),
         inline=False
     )
