@@ -31,34 +31,65 @@ def save_stocks(data):
 
 def get_default_stocks():
     """Retourne la structure de stock par défaut."""
-    return {
+    default_data = {
         "entrepot": {"petrole_non_raffine": 0},
         "total": {
             "petrole_non_raffine": 0, "gazole": 0,
             "sp95": 0, "sp98": 0, "kerosene": 0
         }
     }
+    # Crée le fichier par défaut s'il n'existe pas la première fois
+    save_stocks(default_data)
+    return default_data
 
-# --- Embed principal ---
+# --- MODIFIÉ : L'embed avec une meilleure mise en page ---
 def create_embed():
-    """Crée et retourne l'embed Discord affichant l'état des stocks."""
+    """Crée et retourne l'embed Discord avec une mise en page améliorée."""
     data = load_stocks()
-    embed = discord.Embed(title="🏭 Suivi des stocks", color=discord.Color.orange())
+    embed = discord.Embed(
+        title="⛽ Suivi des stocks - TotalEnergies",
+        color=0xFF7900 # Couleur orange de TotalEnergies
+    )
+    
+    # --- Section Entrepôt ---
     embed.add_field(
         name="📦 Entrepôt",
-        value=f"• Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0)}**",
+        value=f"**Pétrole non raffiné** : {data.get('entrepot', {}).get('petrole_non_raffine', 0):,}".replace(',', ' '),
         inline=False
     )
-    total = data.get('total', {})
-    total_text = (
-        f"• Pétrole non raffiné : **{total.get('petrole_non_raffine', 0)}**\n"
-        f"• Gazole : **{total.get('gazole', 0)}**\n"
-        f"• SP 95 : **{total.get('sp95', 0)}**\n"
-        f"• SP 98 : **{total.get('sp98', 0)}**\n"
-        f"• Kérosène : **{total.get('kerosene', 0)}**"
+
+    # --- Espaceur ---
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+
+    # --- Section Total (Produits raffinés) ---
+    embed.add_field(
+        name="📊 Total des produits finis",
+        value=f"**Pétrole non raffiné** : {data.get('total', {}).get('petrole_non_raffine', 0):,}".replace(',', ' '),
+        inline=False
     )
-    embed.add_field(name="📊 Total", value=total_text, inline=False)
-    embed.set_footer(text=f"Mis à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+    
+    total = data.get('total', {})
+    # On affiche les carburants sur des colonnes pour un look plus propre
+    embed.add_field(
+        name="Carburants",
+        value=(
+            f"**Gazole** : {total.get('gazole', 0):,}\n"
+            f"**SP 95** : {total.get('sp95', 0):,}"
+        ).replace(',', ' '),
+        inline=True
+    )
+    embed.add_field(
+        name="\u200b", # Titre vide pour l'alignement
+        value=(
+            f"**SP 98** : {total.get('sp98', 0):,}\n"
+            f"**Kérosène** : {total.get('kerosene', 0):,}"
+        ).replace(',', ' '),
+        inline=True
+    )
+
+    embed.set_footer(text=f"Dernière mise à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+    embed.set_thumbnail(url="https://i.imgur.com/y3d6k5I.png") # Ajout du logo TotalEnergies
+
     return embed
 
 # --- Formulaire (Modal) ---
@@ -141,7 +172,7 @@ class CategorySelectView(View):
     async def total_button(self, interaction: discord.Interaction, button: Button):
         await self.show_fuel_select(interaction, "total")
 
-# --- NOUVEAU : La vue de confirmation pour le reset ---
+# --- Vue de confirmation pour le reset ---
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int):
         super().__init__(timeout=60)
@@ -149,27 +180,22 @@ class ResetConfirmationView(View):
 
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger, custom_id="confirm_reset")
     async def confirm_button(self, interaction: discord.Interaction, button: Button):
-        # Réinitialise les données et sauvegarde
         save_stocks(get_default_stocks())
         
-        # Met à jour le panneau principal
         try:
             original_message = await interaction.channel.fetch_message(self.original_message_id)
             if original_message:
                 await original_message.edit(embed=create_embed())
         except (discord.NotFound, discord.Forbidden):
-            # Si le message n'est pas trouvé, ce n'est pas grave, le reset a quand même eu lieu
             pass
 
-        # Confirme et supprime le message de confirmation
         await interaction.response.edit_message(content="✅ Tous les stocks ont été remis à zéro.", view=None)
 
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary, custom_id="cancel_reset")
     async def cancel_button(self, interaction: discord.Interaction, button: Button):
-        # Supprime simplement le message de confirmation
-        await interaction.response.edit_message(content="Annulé.", view=None)
+        await interaction.response.edit_message(content="Opération annulée.", view=None)
 
-# --- MODIFIÉ : La vue principale avec le bouton de reset ---
+# --- Vue principale ---
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -188,7 +214,6 @@ class StockView(View):
 
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
     async def reset_button(self, interaction: discord.Interaction, button: Button):
-        # Envoie le message de confirmation
         await interaction.response.send_message(
             content="**⚠️ ATTENTION** : Es-tu sûr de vouloir remettre **tous** les stocks à zéro ? Cette action est irréversible.",
             view=ResetConfirmationView(original_message_id=interaction.message.id),
