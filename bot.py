@@ -9,6 +9,7 @@ import os
 # --- DÉFINITION DU BOT ---
 
 # 1. Récupération du jeton
+# Assurez-vous que la variable d'environnement "DISCORD_TOKEN" est bien définie.
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 # 2. Définition des Intents et activation du contenu de message
@@ -93,15 +94,15 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CORRECTION : Utilisation des arguments nommés (keywords)
+        # CORRECTION : Le label est positionnel (sans nom), le reste est nommé.
         self.add_item(TextInput(
-            label="Type de carburant ou pétrole",
+            "Type de carburant ou pétrole",  # Le label, SANS "label="
             custom_id="type_carburant",
             placeholder="Ex: gazole, petrole_non_raffine..."
         ))
         
         self.add_item(TextInput(
-            label="Quantité",
+            "Quantité", # Le label, SANS "label="
             custom_id="quantite_stock",
             placeholder="Ex: 100"
         ))
@@ -119,7 +120,6 @@ class StockModal(Modal):
         try:
             data = load_stocks()
             
-            # Détermine si on modifie l'entrepôt ou le total
             target_dict = None
             if carburant in data["total"]:
                 target_dict = data["total"]
@@ -130,7 +130,6 @@ class StockModal(Modal):
                 await interaction.response.send_message(f"❌ Carburant invalide. Essayez : {', '.join(valid_fuels)}", ephemeral=True)
                 return
 
-            # Applique l'action (ajouter/retirer)
             if self.action == "add":
                 target_dict[carburant] += quantite
             else:
@@ -177,5 +176,8 @@ async def stocks(ctx):
     view = StockView()
     await ctx.send(embed=embed, view=view)
 
-
-bot.run(TOKEN)
+# Lancement du bot
+if TOKEN:
+    bot.run(TOKEN)
+else:
+    print("Erreur : Le token Discord n'a pas été trouvé. Assurez-vous d'avoir défini la variable d'environnement DISCORD_TOKEN.")
