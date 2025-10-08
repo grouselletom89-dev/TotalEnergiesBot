@@ -16,7 +16,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- CONFIGURATION ---
 REPORT_CHANNEL_ID = 1420794939565936743
-# --- NOUVEAU : ID du salon Annuaire pour le lien ---
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
@@ -31,6 +30,7 @@ def get_paris_time():
 # =================================================================================
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
 # =================================================================================
+# ... (Le code pour !stocks est inchangé et reste ici)
 def load_stocks():
     try:
         with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
@@ -108,7 +108,6 @@ class StockView(View):
     async def reset_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
 @bot.command(name="stocks")
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
-
 
 # =================================================================================
 # SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
@@ -245,22 +244,36 @@ class AnnuaireModal(Modal, title="Mon numéro de téléphone"):
             await interaction.followup.send("✅ Ton numéro a été mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("✅ Ton numéro est sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
 
-# --- NOUVEAU : Vue pour demander une mise à jour (personnes sans numéro) ---
-class RequestUpdateView(View):
+class ReportSelectView(View):
     def __init__(self):
         super().__init__(timeout=180)
-        
-        # Trouve tous les membres des rôles concernés qui n'ont PAS de numéro
-        unregistered_users = []
-        saved_data = load_annuaire()
-        all_registered_ids = {user['id'] for group in saved_data.values() for user in group}
-        
-        # On doit récupérer le serveur (guild) pour trouver les membres. On le fera dans le callback du bouton.
-        # Ici on prépare juste le menu.
-        self.user_select = Select(placeholder="Qui notifier pour renseigner son numéro ?")
+        all_users = [SelectOption(label=u['name'], value=str(u['id'])) for rg in load_annuaire().values() for u in rg]
+        placeholder = "Qui veux-tu signaler ?";
+        if len(all_users) > 25: all_users = all_users[:25]; placeholder = "Qui veux-tu signaler ? (25 premiers)"
+        if not all_users: all_users.append(SelectOption(label="Personne dans l'annuaire", value="disabled"))
+        self.user_select = Select(placeholder=placeholder, options=all_users)
+        async def select_callback(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            user_id_to_report = interaction.data["values"][0]
+            if user_id_to_report == "disabled": await interaction.followup.send("Action annulée.", ephemeral=True); return
+            report_channel = bot.get_channel(REPORT_CHANNEL_ID)
+            if not report_channel: await interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
+            try:
+                member_to_report = await interaction.guild.fetch_member(int(user_id_to_report))
+                annuaire_link = f"https://discord.com/channels/{interaction.guild.id}/{ANNUAIRE_CHANNEL_ID}"
+                await report_channel.send(f"Bonjour {member_to_report.mention}, ton numéro dans l'annuaire semble incorrect. Merci de le mettre à jour ici : {annuaire_link}")
+                await interaction.followup.send(f"✅ {member_to_report.display_name} a été notifié(e).", ephemeral=True)
+            except (discord.NotFound, discord.Forbidden): await interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
+        self.user_select.callback = select_callback
         self.add_item(self.user_select)
 
-    async def populate_users_and_send(self, interaction: discord.Interaction):
+# --- CORRIGÉ : Vue pour demander une mise à jour (personnes sans numéro) ---
+class RequestUpdateView(View):
+    def __init__(self, interaction: discord.Interaction):
+        super().__init__(timeout=180)
+        self.interaction = interaction # Garde l'interaction originale pour la réponse
+
+        # Prépare les options pour le menu déroulant
         saved_data = load_annuaire()
         all_registered_ids = {user['id'] for group in saved_data.values() for user in group}
         role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
@@ -279,60 +292,32 @@ class RequestUpdateView(View):
             placeholder = "Qui notifier ? (25 premiers)"
         if not options:
             options = [SelectOption(label="Tout le monde est à jour !", value="disabled")]
-
-        self.user_select.options = options
-        self.user_select.placeholder = placeholder
-        self.user_select.disabled = not bool(options) or options[0].value == "disabled"
         
-        # Envoie le message avec le menu mis à jour
-        await interaction.response.send_message(view=self, ephemeral=True)
+        # Crée le menu déroulant dynamiquement
+        self.user_select = Select(placeholder=placeholder, options=options, disabled=(not options or options[0].value == "disabled"))
 
-    @discord.ui.select()
-    async def select_callback(self, interaction: discord.Interaction, select: Select):
-        await interaction.response.defer(ephemeral=True)
-        user_id_to_notify = select.values[0]
-        if user_id_to_notify == "disabled":
-            await interaction.followup.send("Action annulée.", ephemeral=True)
-            return
-
-        report_channel = bot.get_channel(REPORT_CHANNEL_ID)
-        if not report_channel:
-            await interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True)
-            return
-
-        try:
-            member_to_notify = await interaction.guild.fetch_member(int(user_id_to_notify))
-            annuaire_link = f"https://discord.com/channels/{interaction.guild.id}/{ANNUAIRE_CHANNEL_ID}"
-            await report_channel.send(f"Bonjour {member_to_notify.mention}, il semble que tu n'aies pas encore renseigné ton numéro dans l'annuaire. "
-                                      f"Merci de le faire ici : {annuaire_link}")
-            await interaction.followup.send(f"✅ {member_to_notify.display_name} a été notifié(e).", ephemeral=True)
-        except (discord.NotFound, discord.Forbidden):
-            await interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
-
-
-class ReportSelectView(View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        all_users = [SelectOption(label=u['name'], value=str(u['id'])) for rg in load_annuaire().values() for u in rg]
-        placeholder = "Qui veux-tu signaler ?";
-        if len(all_users) > 25: all_users = all_users[:25]; placeholder = "Qui veux-tu signaler ? (25 premiers)"
-        if not all_users: all_users.append(SelectOption(label="Personne dans l'annuaire", value="disabled"))
-        
-        self.user_select = Select(placeholder=placeholder, options=all_users)
+        # Définit le callback
         async def select_callback(interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True)
-            user_id_to_report = interaction.data["values"][0]
-            if user_id_to_report == "disabled": await interaction.followup.send("Action annulée.", ephemeral=True); return
+            user_id_to_notify = interaction.data["values"][0]
+            if user_id_to_notify == "disabled":
+                await interaction.followup.send("Action annulée.", ephemeral=True)
+                return
+
             report_channel = bot.get_channel(REPORT_CHANNEL_ID)
-            if not report_channel: await interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True); return
-            
+            if not report_channel:
+                await interaction.followup.send("❌ Erreur : Salon de signalement non trouvé.", ephemeral=True)
+                return
+
             try:
-                member_to_report = await interaction.guild.fetch_member(int(user_id_to_report))
+                member_to_notify = await interaction.guild.fetch_member(int(user_id_to_notify))
                 annuaire_link = f"https://discord.com/channels/{interaction.guild.id}/{ANNUAIRE_CHANNEL_ID}"
-                await report_channel.send(f"Bonjour {member_to_report.mention}, ton numéro dans l'annuaire semble incorrect. Merci de le mettre à jour ici : {annuaire_link}")
-                await interaction.followup.send(f"✅ {member_to_report.display_name} a été notifié(e).", ephemeral=True)
-            except (discord.NotFound, discord.Forbidden): await interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
+                await report_channel.send(f"Bonjour {member_to_notify.mention}, il semble que tu n'aies pas encore renseigné ton numéro dans l'annuaire. Merci de le faire ici : {annuaire_link}")
+                await interaction.followup.send(f"✅ {member_to_notify.display_name} a été notifié(e).", ephemeral=True)
+            except (discord.NotFound, discord.Forbidden):
+                await interaction.followup.send("❌ Erreur lors de la notification.", ephemeral=True)
         
+        # Lie le callback et ajoute l'item
         self.user_select.callback = select_callback
         self.add_item(self.user_select)
 
@@ -341,12 +326,10 @@ class AnnuaireView(View):
     @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
     async def update_number_button(self, i: discord.Interaction, b: Button): await i.response.send_modal(AnnuaireModal())
     
-    # --- NOUVEAU BOUTON ---
     @discord.ui.button(label="Demander d'actualiser", style=discord.ButtonStyle.secondary, custom_id="request_annuaire_update")
     async def request_update_button(self, interaction: discord.Interaction, button: Button):
-        # On crée une nouvelle vue et on appelle sa méthode pour peupler la liste et l'envoyer
-        view = RequestUpdateView()
-        await view.populate_users_and_send(interaction)
+        # La vue a besoin de 'interaction' pour peupler la liste des membres
+        await interaction.response.send_message(view=RequestUpdateView(interaction), ephemeral=True)
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_annuaire")
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=await create_annuaire_embed(i.guild), view=self)
