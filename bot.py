@@ -139,17 +139,17 @@ class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success, custom_id="add_stock")
     async def add_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(StockModal(action="add"))
+        # ...
 
-    @discord.ui.button(label="Retirer", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Retirer", style=discord.ButtonStyle.danger, custom_id="remove_stock")
     async def remove_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(StockModal(action="remove"))
+        # ...
 
-    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(embed=create_embed(), view=self)
+        # ...
 
 
 # --- Commande Discord ---
