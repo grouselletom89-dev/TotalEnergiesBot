@@ -38,11 +38,10 @@ def get_default_stocks():
             "sp95": 0, "sp98": 0, "kerosene": 0
         }
     }
-    # Crée le fichier par défaut s'il n'existe pas la première fois
     save_stocks(default_data)
     return default_data
 
-# --- MODIFIÉ : L'embed avec une meilleure mise en page ---
+# --- MODIFIÉ : L'embed avec la présentation finale ---
 def create_embed():
     """Crée et retourne l'embed Discord avec une mise en page améliorée."""
     data = load_stocks()
@@ -58,39 +57,34 @@ def create_embed():
         inline=False
     )
 
-    # --- Espaceur ---
-    embed.add_field(name="\u200b", value="\u200b", inline=False)
-
-    # --- Section Total (Produits raffinés) ---
+    # --- Section Total ---
+    total = data.get('total', {})
     embed.add_field(
         name="📊 Total des produits finis",
-        value=f"**Pétrole non raffiné** : {data.get('total', {}).get('petrole_non_raffine', 0):,}".replace(',', ' '),
+        value=f"**Pétrole non raffiné** : {total.get('petrole_non_raffine', 0):,}".replace(',', ' '),
         inline=False
     )
     
-    total = data.get('total', {})
-    # On affiche les carburants sur des colonnes pour un look plus propre
+    # --- Carburants sur une seule ligne ---
+    carburants_text = (
+        f"**Gazole**: {total.get('gazole', 0):,} | "
+        f"**SP95**: {total.get('sp95', 0):,} | "
+        f"**SP98**: {total.get('sp98', 0):,} | "
+        f"**Kérosène**: {total.get('kerosene', 0):,}"
+    ).replace(',', ' ')
+
     embed.add_field(
-        name="Carburants",
-        value=(
-            f"**Gazole** : {total.get('gazole', 0):,}\n"
-            f"**SP 95** : {total.get('sp95', 0):,}"
-        ).replace(',', ' '),
-        inline=True
-    )
-    embed.add_field(
-        name="\u200b", # Titre vide pour l'alignement
-        value=(
-            f"**SP 98** : {total.get('sp98', 0):,}\n"
-            f"**Kérosène** : {total.get('kerosene', 0):,}"
-        ).replace(',', ' '),
-        inline=True
+        name="Carburants disponibles",
+        value=carburants_text,
+        inline=False
     )
 
     embed.set_footer(text=f"Dernière mise à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
-    embed.set_thumbnail(url="https://i.imgur.com/y3d6k5I.png") # Ajout du logo TotalEnergies
+    # Logo corrigé
+    embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
 
     return embed
+
 
 # --- Formulaire (Modal) ---
 class StockModal(Modal):
