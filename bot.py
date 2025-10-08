@@ -14,8 +14,8 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- CONFIGURATION ---
-# REMPLACE CET ID PAR CELUI DE TON SALON DE MODÉRATION
-REPORT_CHANNEL_ID = 123456789012345678 # ID D'EXEMPLE, À CHANGER
+# ID du salon de signalement que tu as fourni
+REPORT_CHANNEL_ID = 1420794939565936743
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -29,15 +29,19 @@ def get_paris_time():
 # =================================================================================
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
 # =================================================================================
+
 def load_stocks():
     try:
         with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except FileNotFoundError: return get_default_stocks()
+
 def save_stocks(data):
     with open(STOCKS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
+
 def get_default_stocks():
     default_data = {"entrepot": {"petrole_non_raffine": 0}, "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}}
     save_stocks(default_data); return default_data
+
 def create_stocks_embed():
     data = load_stocks()
     embed = discord.Embed(title="⛽ Suivi des stocks - TotalEnergies", color=0xFF7900)
@@ -49,6 +53,7 @@ def create_stocks_embed():
     embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
+
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
         self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
@@ -66,6 +71,7 @@ class StockModal(Modal):
             if msg: await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais actualisation auto. échouée.", ephemeral=True)
+
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
         super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category
@@ -77,6 +83,7 @@ class FuelSelectView(View):
             carburant = interaction.data["values"][0]
             if carburant != "disabled": await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
         self.fuel_select.callback = select_callback; self.add_item(self.fuel_select)
+
 class CategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_fuel_select(self, i: discord.Interaction, cat: str): await i.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, cat))
@@ -84,6 +91,7 @@ class CategorySelectView(View):
     async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
     async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
+
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -96,6 +104,7 @@ class ResetConfirmationView(View):
         await i.response.edit_message(content="✅ Stocks remis à zéro.", view=None)
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(content="Opération annulée.", view=None)
+
 class StockView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
@@ -104,6 +113,7 @@ class StockView(View):
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_stocks_embed(), view=self)
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
     async def reset_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
+
 @bot.command(name="stocks")
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
 
@@ -241,36 +251,44 @@ class ReportSelectView(View):
     def __init__(self):
         super().__init__(timeout=180)
         all_users = [SelectOption(label=u['name'], value=str(u['id'])) for rg in load_annuaire().values() for u in rg]
-        if not all_users: all_users.append(SelectOption(label="Personne dans l'annuaire", value="disabled"))
-        self.user_select = Select(placeholder="Qui veux-tu signaler ?", options=all_users)
+        placeholder = "Qui veux-tu signaler ?"
+        if len(all_users) > 25:
+            all_users = all_users[:25]
+            placeholder = "Qui veux-tu signaler ? (25 premiers)"
+        if not all_users:
+            all_users.append(SelectOption(label="Personne dans l'annuaire", value="disabled"))
+        
+        self.user_select = Select(placeholder=placeholder, options=all_users)
+        
+        async def select_callback(interaction: discord.Interaction):
+            user_id_to_report = interaction.data["values"][0]
+            if user_id_to_report == "disabled":
+                await interaction.response.edit_message(content="Action annulée.", view=None); return
+            if REPORT_CHANNEL_ID == 123456789012345678:
+                await interaction.response.edit_message(content="❌ Erreur : L'ID du salon de signalement n'est pas configuré.", view=None); return
+            report_channel = bot.get_channel(REPORT_CHANNEL_ID)
+            if not report_channel:
+                await interaction.response.edit_message(content="❌ Erreur : Salon de signalement non trouvé.", view=None); return
+            member_to_report = interaction.guild.get_member(int(user_id_to_report))
+            if not member_to_report:
+                await interaction.response.edit_message(content="❌ Erreur : Membre introuvable.", view=None); return
+            try:
+                await report_channel.send(f"Bonjour {member_to_report.mention}, ton numéro dans l'annuaire semble incorrect. Merci de le mettre à jour.")
+                await interaction.response.edit_message(content=f"✅ {member_to_report.display_name} a été notifié(e).", view=None)
+            except discord.Forbidden:
+                await interaction.response.edit_message(content="❌ Erreur: Permissions manquantes pour envoyer un message.", view=None)
+        
+        self.user_select.callback = select_callback
         self.add_item(self.user_select)
 
-    @discord.ui.select()
-    async def select_callback(self, interaction: discord.Interaction, select: Select):
-        user_id_to_report = select.values[0]
-        if user_id_to_report == "disabled": await interaction.response.edit_message(content="Action annulée.", view=None); return
-        report_channel = bot.get_channel(REPORT_CHANNEL_ID)
-        if not report_channel: await interaction.response.edit_message(content="❌ Erreur : Salon de signalement non trouvé.", view=None); return
-        member_to_report = interaction.guild.get_member(int(user_id_to_report))
-        if not member_to_report: await interaction.response.edit_message(content="❌ Erreur : Membre introuvable.", view=None); return
-        try:
-            await report_channel.send(f"Bonjour {member_to_report.mention}, ton numéro dans l'annuaire semble incorrect. Merci de le mettre à jour.")
-            await interaction.response.edit_message(content=f"✅ {member_to_report.display_name} a été notifié(e).", view=None)
-        except discord.Forbidden: await interaction.response.edit_message(content="❌ Erreur: Permissions manquantes pour envoyer un message.", view=None)
-
-# --- MODIFIÉ : Vue pour l'annuaire avec le bouton Rafraîchir ---
 class AnnuaireView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
     async def update_number_button(self, i: discord.Interaction, b: Button): await i.response.send_modal(AnnuaireModal())
-    
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_annuaire")
-    async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(embed=create_annuaire_embed(), view=self)
-
+    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_annuaire_embed(), view=self)
     @discord.ui.button(label="Signaler numéro invalide", style=discord.ButtonStyle.danger, custom_id="report_annuaire_number")
-    async def report_number_button(self, i: discord.Interaction, b: Button):
-        await i.response.send_message(view=ReportSelectView(), ephemeral=True)
+    async def report_number_button(self, i: discord.Interaction, b: Button): await i.response.send_message(view=ReportSelectView(), ephemeral=True)
 
 @bot.command(name="annuaire")
 async def annuaire(ctx): await ctx.send(embed=create_annuaire_embed(), view=AnnuaireView())
