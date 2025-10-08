@@ -56,18 +56,21 @@ def create_embed():
 
 # --- Formulaire (Modal) ---
 class StockModal(Modal):
-    def __init__(self, action: str, carburant: str):
+    def __init__(self, action: str, carburant: str, original_message_id: int):
         self.action = action
         self.carburant = carburant
+        self.original_message_id = original_message_id
         super().__init__(title=f"{'Ajout de' if action == 'add' else 'Retrait de'} {carburant.replace('_', ' ').title()}")
 
     quantite_stock = TextInput(label="Quantité", placeholder="Ex: 100")
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True) # Accuse réception pour éviter un timeout
+        
         try:
             quantite = int(self.quantite_stock.value)
         except ValueError:
-            await interaction.response.send_message("⚠️ La quantité doit être un nombre entier.", ephemeral=True)
+            await interaction.followup.send("⚠️ La quantité doit être un nombre entier.", ephemeral=True)
             return
         
         data = load_stocks()
@@ -78,7 +81,7 @@ class StockModal(Modal):
             target_dict = data["entrepot"]
         
         if target_dict is None:
-            await interaction.response.send_message("❌ Une erreur est survenue avec ce type de carburant.", ephemeral=True)
+            await interaction.followup.send("❌ Une erreur est survenue avec ce type de carburant.", ephemeral=True)
             return
 
         if self.action == "add":
@@ -87,54 +90,64 @@ class StockModal(Modal):
             target_dict[self.carburant] = max(0, target_dict[self.carburant] - quantite)
 
         save_stocks(data)
-        await interaction.response.send_message(f"✅ Stock de **{self.carburant.replace('_', ' ')}** mis à jour !", ephemeral=True)
 
-# --- Vue avec le menu déroulant (CORRIGÉE) ---
+        try:
+            # Récupère le message original et le met à jour
+            original_message = await interaction.channel.fetch_message(self.original_message_id)
+            if original_message:
+                await original_message.edit(embed=create_embed())
+                await interaction.followup.send(f"✅ Stock de **{self.carburant.replace('_', ' ')}** mis à jour !", ephemeral=True)
+        except discord.NotFound:
+            await interaction.followup.send("⚠️ Le message original n'a pas pu être trouvé pour la mise à jour.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.followup.send("⚠️ Je n'ai pas les permissions pour modifier le message original.", ephemeral=True)
+
+# --- Vue avec le menu déroulant ---
 class FuelSelectView(View):
-    def __init__(self, action: str):
+    def __init__(self, action: str, original_message_id: int):
         super().__init__(timeout=180)
         self.action = action
+        self.original_message_id = original_message_id
         self.populate_options()
 
     def populate_options(self):
-        """Peuple le menu déroulant avec les options du fichier JSON."""
         data = load_stocks()
         all_fuels = list(data.get('entrepot', {}).keys()) + list(data.get('total', {}).keys())
+        options = [SelectOption(label=fuel.replace("_", " ").title(), value=fuel) for fuel in sorted(list(set(all_fuels)))]
         
-        options = [
-            SelectOption(label=fuel.replace("_", " ").title(), value=fuel)
-            for fuel in sorted(list(set(all_fuels)))
-        ]
-        
-        # S'assure qu'il y a au moins une option pour éviter l'erreur
+        select_menu = self.children[0]
         if not options:
-            options.append(SelectOption(label="Aucun carburant trouvé", value="disabled", default=True))
-        
-        # Récupère le composant Select et met à jour ses options
-        select_menu = discord.utils.get(self.children, custom_id="fuel_selector")
-        select_menu.options = options
-        select_menu.disabled = not all_fuels # Désactive le menu si la liste est vide
+            select_menu.options = [SelectOption(label="Aucun carburant trouvé", value="disabled")]
+            select_menu.disabled = True
+        else:
+            select_menu.options = options
+            select_menu.disabled = False
 
     @discord.ui.select(placeholder="Choisis le type de carburant...", custom_id="fuel_selector", min_values=1, max_values=1)
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         carburant_choisi = select.values[0]
-        if carburant_choisi == "disabled":
-            await interaction.response.defer()
-            return
-        await interaction.response.send_modal(StockModal(action=self.action, carburant=carburant_choisi))
+        if carburant_choisi != "disabled":
+            await interaction.response.send_modal(StockModal(action=self.action, carburant=carburant_choisi, original_message_id=self.original_message_id))
 
 # --- Vue principale avec les boutons ---
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
+    async def send_fuel_select(self, interaction: discord.Interaction, action: str):
+        # On passe l'ID du message sur lequel l'utilisateur a cliqué
+        await interaction.response.send_message(
+            view=FuelSelectView(action=action, original_message_id=interaction.message.id), 
+            ephemeral=True
+        )
+
     @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success, custom_id="add_stock")
     async def add_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(view=FuelSelectView(action="add"), ephemeral=True)
+        await self.send_fuel_select(interaction, "add")
 
     @discord.ui.button(label="Retirer", style=discord.ButtonStyle.danger, custom_id="remove_stock")
     async def remove_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(view=FuelSelectView(action="remove"), ephemeral=True)
+        await self.send_fuel_select(interaction, "remove")
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
@@ -154,4 +167,4 @@ async def stocks(ctx):
 if TOKEN:
     bot.run(TOKEN)
 else:
-    print("ERREUR : Le token Discord n'a pas été trouvé. Assurez-vous d'avoir défini la variable d'environnement DISCORD_TOKEN.")
+    print("ERREUR : Le token Discord n'a pas été trouvé.")
