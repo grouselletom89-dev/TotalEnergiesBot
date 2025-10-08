@@ -1,30 +1,49 @@
 {
     "stations": {
         "Station de Lampaul": {
-            "image_url": "https://VOTRE_LIEN_IMAGE_ICI.png",
+            "image_url": "URL_DE_VOTRE_IMAGE_ICI",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
-                "POMPE 2": { "gazole": 0, "sp95": 0, "sp98": 0 },
-                "POMPE 3": { "gazole": 0, "sp95": 0, "sp98": 0 }
+                "POMPE 1": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                },
+                "POMPE 2": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                },
+                "POMPE 3": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                }
             }
         },
         "Station de Ligoudou": {
-            "image_url": "https://VOTRE_AUTRE_LIEN_IMAGE_ICI.png",
+            "image_url": "URL_DE_VOTRE_IMAGE_ICI",
             "last_updated": "N/A",
             "pumps": {
-                "POMPE 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
-                "POMPE 2": { "gazole": 0, "sp95": 0, "sp98": 0 }
+                "POMPE 1": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                },
+                "POMPE 2": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                }
             }
         }
     },
-    "...": "..."
-}
     "ports": {
         "Port de Lampaul": {
+            "image_url": "",
             "last_updated": "N/A",
             "pumps": {
-                "Pompe 1": {
+                "POMPE 1": {
                     "gazole": 0,
                     "sp95": 0,
                     "sp98": 0
@@ -32,9 +51,10 @@
             }
         },
         "Port de Ligoudou": {
+            "image_url": "",
             "last_updated": "N/A",
             "pumps": {
-                "Pompe 1": {
+                "POMPE 1": {
                     "gazole": 0,
                     "sp95": 0,
                     "sp98": 0
@@ -44,9 +64,10 @@
     },
     "aeroport": {
         "Aéroport": {
+            "image_url": "",
             "last_updated": "N/A",
             "pumps": {
-                "Pompe 1": {
+                "POMPE 1": {
                     "kerosene": 0
                 }
             }
