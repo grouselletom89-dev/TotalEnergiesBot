@@ -1,41 +1,25 @@
 {
     "stations": {
         "Station de Lampaul": {
+            "image_url": "https://VOTRE_LIEN_IMAGE_ICI.png",
             "last_updated": "N/A",
             "pumps": {
-                "Pompe 1": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                },
-                "Pompe 2": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                },
-                "Pompe 3": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                }
+                "POMPE 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
+                "POMPE 2": { "gazole": 0, "sp95": 0, "sp98": 0 },
+                "POMPE 3": { "gazole": 0, "sp95": 0, "sp98": 0 }
             }
         },
         "Station de Ligoudou": {
+            "image_url": "https://VOTRE_AUTRE_LIEN_IMAGE_ICI.png",
             "last_updated": "N/A",
             "pumps": {
-                "Pompe 1": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                },
-                "Pompe 2": {
-                    "gazole": 0,
-                    "sp95": 0,
-                    "sp98": 0
-                }
+                "POMPE 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
+                "POMPE 2": { "gazole": 0, "sp95": 0, "sp98": 0 }
             }
         }
     },
+    "...": "..."
+}
     "ports": {
         "Port de Lampaul": {
             "last_updated": "N/A",
