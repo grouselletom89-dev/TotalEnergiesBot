@@ -29,7 +29,7 @@ def load_stocks():
         with open("stocks.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        # Retourne la structure de données initiale
+        # Retourne la structure de données initiale si le fichier n'existe pas
         return {
             "entrepot": {"petrole_non_raffine": 0},
             "total": {
@@ -94,19 +94,20 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CORRECTION FINALE: Utilisation des arguments positionnels (label, custom_id) 
-        # pour la compatibilité maximale.
+        # CORRECTION CRITIQUE FINALE: Utilisation des arguments positionnels stricts
+        # Ordre: (label, custom_id, style, ...)
+        
         self.add_item(TextInput(
             "Type de carburant", # 1er argument positionnel (label)
             "type_carburant", # 2ème argument positionnel (custom_id)
-            style=discord.TextStyle.short,
+            discord.TextStyle.short, # 3ème argument positionnel (style)
             placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine"
         ))
         
         self.add_item(TextInput(
             "Quantité", # 1er argument positionnel (label)
             "quantite_stock", # 2ème argument positionnel (custom_id)
-            style=discord.TextStyle.short,
+            discord.TextStyle.short, # 3ème argument positionnel (style)
             placeholder="ex : 100"
         ))
 
