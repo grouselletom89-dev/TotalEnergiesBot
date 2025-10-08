@@ -94,21 +94,17 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CORRECTION CRITIQUE FINALE: Utilisation des arguments positionnels stricts
-        # Ordre: (label, custom_id, style, ...)
-        
+        # CORRECTION CRITIQUE FINALE: Utilisation des arguments positionnels stricts (sans aucun argument nommé sauf l'initialisation implicite)
         self.add_item(TextInput(
-            "Type de carburant", # 1er argument positionnel (label)
+            "Type de carburant (ex: gazole)", # 1er argument positionnel (label)
             "type_carburant", # 2ème argument positionnel (custom_id)
-            discord.TextStyle.short, # 3ème argument positionnel (style)
-            placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine"
+            discord.TextStyle.short # 3ème argument positionnel (style)
         ))
         
         self.add_item(TextInput(
-            "Quantité", # 1er argument positionnel (label)
+            "Quantité (ex: 100)", # 1er argument positionnel (label)
             "quantite_stock", # 2ème argument positionnel (custom_id)
-            discord.TextStyle.short, # 3ème argument positionnel (style)
-            placeholder="ex : 100"
+            discord.TextStyle.short # 3ème argument positionnel (style)
         ))
 
 
