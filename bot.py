@@ -225,6 +225,7 @@ async def create_annuaire_embed(guild: discord.Guild):
     embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
     return embed
 
+# --- CORRIGÉ : Modal et Vues de l'annuaire ---
 class AnnuaireModal(Modal):
     def __init__(self, current_number: str = ""):
         super().__init__(title="Mon numéro de téléphone")
@@ -253,8 +254,6 @@ class AnnuaireModal(Modal):
             await interaction.followup.send("✅ Ton numéro a été mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("✅ Ton numéro est sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
 
-
-# --- CORRIGÉ : Logique des boutons de l'annuaire simplifiée ---
 class AnnuaireView(View):
     def __init__(self): 
         super().__init__(timeout=None)
@@ -267,6 +266,8 @@ class AnnuaireView(View):
     
     @discord.ui.button(label="Demander d'actualiser", style=discord.ButtonStyle.secondary, custom_id="request_annuaire_update")
     async def request_update_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True) # Defer immediately
+        
         saved_data = load_annuaire()
         all_registered_ids = {user['id'] for group in saved_data.values() for user in group if user.get('number')}
         role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
@@ -281,11 +282,10 @@ class AnnuaireView(View):
         options = list({opt.value: opt for opt in options}.values())
         placeholder = "Qui notifier pour renseigner son numéro ?"
         if len(options) > 25:
-            options = options[:25]
-            placeholder = "Qui notifier ? (25 premiers)"
+            options = options[:25]; placeholder = "Qui notifier ? (25 premiers)"
         
         if not options:
-            await interaction.response.send_message("🎉 Tout le monde a renseigné son numéro !", ephemeral=True)
+            await interaction.followup.send("🎉 Tout le monde a renseigné son numéro !", ephemeral=True)
             return
 
         select_menu = Select(placeholder=placeholder, options=options)
@@ -307,7 +307,7 @@ class AnnuaireView(View):
         select_menu.callback = select_callback
         temp_view = View(timeout=180)
         temp_view.add_item(select_menu)
-        await interaction.response.send_message(view=temp_view, ephemeral=True)
+        await interaction.followup.send(view=temp_view, ephemeral=True)
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_annuaire")
     async def refresh_button(self, i: discord.Interaction, b: Button): 
@@ -315,12 +315,13 @@ class AnnuaireView(View):
 
     @discord.ui.button(label="Signaler numéro invalide", style=discord.ButtonStyle.danger, custom_id="report_annuaire_number")
     async def report_number_button(self, interaction: discord.Interaction, b: Button):
+        await interaction.response.defer(ephemeral=True)
         saved_data = load_annuaire()
         all_users = [SelectOption(label=u['name'], value=str(u['id'])) for rg in saved_data.values() for u in rg if u.get('number')]
         placeholder = "Qui veux-tu signaler ?"
         if len(all_users) > 25: all_users = all_users[:25]; placeholder = "Qui veux-tu signaler ? (25 premiers)"
         if not all_users:
-            await interaction.response.send_message("Personne n'a de numéro à signaler pour l'instant.", ephemeral=True)
+            await interaction.followup.send("Personne n'a de numéro à signaler pour l'instant.", ephemeral=True)
             return
 
         select_menu = Select(placeholder=placeholder, options=all_users)
@@ -341,7 +342,7 @@ class AnnuaireView(View):
         select_menu.callback = select_callback
         temp_view = View(timeout=180)
         temp_view.add_item(select_menu)
-        await interaction.response.send_message(view=temp_view, ephemeral=True)
+        await interaction.followup.send(view=temp_view, ephemeral=True)
 
 @bot.command(name="annuaire")
 async def annuaire(ctx): await ctx.send(embed=await create_annuaire_embed(ctx.guild), view=AnnuaireView())
