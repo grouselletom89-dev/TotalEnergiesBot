@@ -41,7 +41,7 @@ def get_default_stocks():
     save_stocks(default_data)
     return default_data
 
-# --- MODIFIÉ : L'embed avec la présentation finale ---
+# --- MODIFIÉ : L'embed avec les quantités en gras ---
 def create_embed():
     """Crée et retourne l'embed Discord avec une mise en page améliorée."""
     data = load_stocks()
@@ -52,25 +52,25 @@ def create_embed():
     
     # --- Section Entrepôt ---
     embed.add_field(
-        name="📦 ENTREPÔT",
-        value=f"**Pétrole non raffiné** : {data.get('entrepot', {}).get('petrole_non_raffine', 0):,}".replace(',', ' '),
+        name="**📦 ENTREPÔT**",
+        value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '),
         inline=False
     )
 
     # --- Section Total ---
     total = data.get('total', {})
     embed.add_field(
-        name="📊 STOCKAGE",
-        value=f"**Pétrole non raffiné** : {total.get('petrole_non_raffine', 0):,}".replace(',', ' '),
+        name="**📊 STOCKAGE**",
+        value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '),
         inline=False
     )
     
     # --- Carburants sur une seule ligne ---
     carburants_text = (
-        f"**Gazole**: {total.get('gazole', 0):,} | "
-        f"**SP95**: {total.get('sp95', 0):,} | "
-        f"**SP98**: {total.get('sp98', 0):,} | "
-        f"**Kérosène**: {total.get('kerosene', 0):,}"
+        f"Gazole: **{total.get('gazole', 0):,}** | "
+        f"SP95: **{total.get('sp95', 0):,}** | "
+        f"SP98: **{total.get('sp98', 0):,}** | "
+        f"Kérosène: **{total.get('kerosene', 0):,}**"
     ).replace(',', ' ')
 
     embed.add_field(
@@ -186,46 +186,4 @@ class ResetConfirmationView(View):
         await interaction.response.edit_message(content="✅ Tous les stocks ont été remis à zéro.", view=None)
 
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary, custom_id="cancel_reset")
-    async def cancel_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(content="Opération annulée.", view=None)
-
-# --- Vue principale ---
-class StockView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
-    async def update_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(
-            content="Dans quelle catégorie souhaites-tu mettre à jour un stock ?",
-            view=CategorySelectView(original_message_id=interaction.message.id), 
-            ephemeral=True
-        )
-
-    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
-    async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(embed=create_embed(), view=self)
-
-    @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
-    async def reset_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(
-            content="**⚠️ ATTENTION** : Es-tu sûr de vouloir remettre **tous** les stocks à zéro ? Cette action est irréversible.",
-            view=ResetConfirmationView(original_message_id=interaction.message.id),
-            ephemeral=True
-        )
-
-# --- Événements et commandes ---
-@bot.event
-async def on_ready():
-    print(f'Bot connecté sous le nom : {bot.user.name}')
-    bot.add_view(StockView())
-
-@bot.command(name="stocks")
-async def stocks(ctx):
-    await ctx.send(embed=create_embed(), view=StockView())
-
-# --- Lancement du bot ---
-if TOKEN:
-    bot.run(TOKEN)
-else:
-    print("ERREUR : Le token Discord n'a pas été trouvé.")
+    async def
