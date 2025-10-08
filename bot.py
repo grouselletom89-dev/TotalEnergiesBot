@@ -203,39 +203,23 @@ def load_annuaire():
 def save_annuaire(data):
     with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
-# --- MODIFIÉ : L'embed de l'annuaire affiche tous les membres avec le rôle ---
 async def create_annuaire_embed(guild: discord.Guild):
     saved_data = load_annuaire()
     embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
-    
     role_order = {"Patron": "👑", "Co-Patron": "⭐", "Chefs d'équipe": "📋", "Employés": "👨‍💼"}
-
     for role_name, icon in role_order.items():
-        # Trouve le rôle sur le serveur
         role = discord.utils.get(guild.roles, name=role_name)
-        if not role:
-            continue
-
-        # Récupère tous les membres ayant ce rôle
+        if not role: continue
         members_with_role = role.members
-        if not members_with_role:
-            continue
-
+        if not members_with_role: continue
         value_str = ""
-        # Trie les membres par leur nom d'affichage
         for member in sorted(members_with_role, key=lambda m: m.display_name):
-            # Cherche si on a un numéro sauvegardé pour ce membre
             number = None
             for entry in saved_data.get(role_name, []):
                 if entry['id'] == member.id:
-                    number = entry.get('number')
-                    break
-            
+                    number = entry.get('number'); break
             value_str += f"• {member.display_name} → {'`' + number + '`' if number else ' Pas encore renseigné'}\n"
-        
-        if value_str:
-            embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
-
+        if value_str: embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
     embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
     return embed
 
@@ -244,24 +228,17 @@ class AnnuaireModal(Modal, title="Mon numéro de téléphone"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data, user, number = load_annuaire(), interaction.user, self.phone_number.value.strip()
-        
-        # Supprime l'ancienne entrée de l'utilisateur
         for role_group in data.values():
             role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
-            
         role_priority = ["Patron", "Co-Patron", "Chefs d'équipe", "Employés"]
         user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), None)
-        
         if user_role_name and number:
             data.setdefault(user_role_name, []).append({"id": user.id, "name": user.display_name, "number": number})
-            
         save_annuaire(data)
-        
         try:
             async for message in interaction.channel.history(limit=100):
                 if message.author == bot.user and message.embeds and message.embeds[0].title == "📞 Annuaire Téléphonique":
-                    await message.edit(embed=await create_annuaire_embed(interaction.guild))
-                    break
+                    await message.edit(embed=await create_annuaire_embed(interaction.guild)); break
             await interaction.followup.send("✅ Ton numéro a été mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("✅ Ton numéro est sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
 
@@ -286,7 +263,8 @@ class ReportSelectView(View):
                 await interaction.followup.send(f"✅ {member_to_report.display_name} a été notifié(e).", ephemeral=True)
             except discord.NotFound: await interaction.followup.send("❌ Erreur : Ce membre n'a pas pu être trouvé sur le serveur.", ephemeral=True)
             except discord.Forbidden: await interaction.followup.send("❌ Erreur: Permissions manquantes pour envoyer un message.", ephemeral=True)
-        self.user_select.callback = select_callback; self.add_item(self.user_select)
+        self.user_select.callback = select_callback
+        self.add_item(self.user_select)
 
 class AnnuaireView(View):
     def __init__(self): super().__init__(timeout=None)
