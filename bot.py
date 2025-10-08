@@ -22,20 +22,22 @@ def load_stocks():
         with open(PERSISTENT_STORAGE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        default_data = {
-            "entrepot": {"petrole_non_raffine": 0},
-            "total": {
-                "petrole_non_raffine": 0, "gazole": 0,
-                "sp95": 0, "sp98": 0, "kerosene": 0
-            }
-        }
-        save_stocks(default_data)
-        return default_data
+        return get_default_stocks()
 
 def save_stocks(data):
     """Sauvegarde les données dans le volume persistant."""
     with open(PERSISTENT_STORAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+def get_default_stocks():
+    """Retourne la structure de stock par défaut."""
+    return {
+        "entrepot": {"petrole_non_raffine": 0},
+        "total": {
+            "petrole_non_raffine": 0, "gazole": 0,
+            "sp95": 0, "sp98": 0, "kerosene": 0
+        }
+    }
 
 # --- Embed principal ---
 def create_embed():
@@ -59,10 +61,10 @@ def create_embed():
     embed.set_footer(text=f"Mis à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
     return embed
 
-# --- MODIFIÉ : Le formulaire accepte maintenant la catégorie ---
+# --- Formulaire (Modal) ---
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
-        self.category = category # Ajout de la catégorie
+        self.category = category
         self.carburant = carburant
         self.original_message_id = original_message_id
         super().__init__(title=f"Mettre à jour : {carburant.replace('_', ' ').title()}")
@@ -81,9 +83,6 @@ class StockModal(Modal):
             return
         
         data = load_stocks()
-        
-        # --- LOGIQUE CORRIGÉE ---
-        # On cible directement la bonne catégorie ("entrepot" ou "total")
         if self.category in data and self.carburant in data[self.category]:
             data[self.category][self.carburant] = quantite
             save_stocks(data)
@@ -95,11 +94,11 @@ class StockModal(Modal):
             original_message = await interaction.channel.fetch_message(self.original_message_id)
             if original_message:
                 await original_message.edit(embed=create_embed())
-                await interaction.followup.send(f"✅ Stock de **{self.carburant.replace('_', ' ')}** dans **{self.category}** mis à jour à **{quantite}** !", ephemeral=True)
+                await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden):
             await interaction.followup.send("⚠️ Le panneau principal a été mis à jour, mais n'a pas pu être actualisé automatiquement.", ephemeral=True)
 
-# --- MODIFIÉ : Le menu déroulant transmet la catégorie au formulaire ---
+# --- Vues pour la mise à jour ---
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
         super().__init__(timeout=180)
@@ -111,7 +110,6 @@ class FuelSelectView(View):
         data = load_stocks()
         fuels_in_category = list(data.get(self.category, {}).keys())
         options = [SelectOption(label=fuel.replace("_", " ").title(), value=fuel) for fuel in sorted(fuels_in_category)]
-        
         select_menu = self.children[0]
         if not options:
             select_menu.options = [SelectOption(label="Aucun carburant dans cette catégorie", value="disabled")]
@@ -124,10 +122,8 @@ class FuelSelectView(View):
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         carburant_choisi = select.values[0]
         if carburant_choisi != "disabled":
-            # On transmet la catégorie au formulaire
             await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant_choisi, original_message_id=self.original_message_id))
 
-# --- Vue pour choisir la catégorie (inchangée) ---
 class CategorySelectView(View):
     def __init__(self, original_message_id: int):
         super().__init__(timeout=180)
@@ -145,7 +141,35 @@ class CategorySelectView(View):
     async def total_button(self, interaction: discord.Interaction, button: Button):
         await self.show_fuel_select(interaction, "total")
 
-# --- Vue principale avec un seul bouton "Mettre à jour" ---
+# --- NOUVEAU : La vue de confirmation pour le reset ---
+class ResetConfirmationView(View):
+    def __init__(self, original_message_id: int):
+        super().__init__(timeout=60)
+        self.original_message_id = original_message_id
+
+    @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger, custom_id="confirm_reset")
+    async def confirm_button(self, interaction: discord.Interaction, button: Button):
+        # Réinitialise les données et sauvegarde
+        save_stocks(get_default_stocks())
+        
+        # Met à jour le panneau principal
+        try:
+            original_message = await interaction.channel.fetch_message(self.original_message_id)
+            if original_message:
+                await original_message.edit(embed=create_embed())
+        except (discord.NotFound, discord.Forbidden):
+            # Si le message n'est pas trouvé, ce n'est pas grave, le reset a quand même eu lieu
+            pass
+
+        # Confirme et supprime le message de confirmation
+        await interaction.response.edit_message(content="✅ Tous les stocks ont été remis à zéro.", view=None)
+
+    @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary, custom_id="cancel_reset")
+    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+        # Supprime simplement le message de confirmation
+        await interaction.response.edit_message(content="Annulé.", view=None)
+
+# --- MODIFIÉ : La vue principale avec le bouton de reset ---
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -161,6 +185,15 @@ class StockView(View):
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.edit_message(embed=create_embed(), view=self)
+
+    @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
+    async def reset_button(self, interaction: discord.Interaction, button: Button):
+        # Envoie le message de confirmation
+        await interaction.response.send_message(
+            content="**⚠️ ATTENTION** : Es-tu sûr de vouloir remettre **tous** les stocks à zéro ? Cette action est irréversible.",
+            view=ResetConfirmationView(original_message_id=interaction.message.id),
+            ephemeral=True
+        )
 
 # --- Événements et commandes ---
 @bot.event
