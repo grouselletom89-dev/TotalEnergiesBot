@@ -5,7 +5,7 @@ from discord import SelectOption
 import json
 from datetime import datetime
 import os
-import pytz # On importe la nouvelle librairie
+import pytz
 
 # --- DÉFINITION DU BOT ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -17,9 +17,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
 
-# --- NOUVEAU : Fonction pour obtenir l'heure de Paris ---
 def get_paris_time():
-    """Retourne la date et l'heure actuelles formatées pour le fuseau horaire de Paris."""
     paris_tz = pytz.timezone("Europe/Paris")
     return datetime.now(paris_tz).strftime('%d/%m/%Y %H:%M:%S')
 
@@ -47,7 +45,7 @@ def create_stocks_embed():
     embed.add_field(name="📊 Total des produits finis", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
     carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
-    embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}") # Utilise la nouvelle fonction
+    embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
 
@@ -68,17 +66,41 @@ class StockModal(Modal):
             if msg: await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais actualisation auto. échouée.", ephemeral=True)
+
+# --- CORRIGÉ : La vue du menu déroulant a été réécrite pour être plus fiable ---
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
-        super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category; self.populate_options()
-    def populate_options(self):
-        data, fuels = load_stocks(), list(data.get(self.category, {}).keys()); options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]; select_menu = self.children[0]
-        if not options: select_menu.options, select_menu.disabled = [SelectOption(label="Aucun carburant ici", value="disabled")], True
-        else: select_menu.options, select_menu.disabled = options, False
-    @discord.ui.select(placeholder="Choisis le carburant...", custom_id="stocks_fuel_selector")
-    async def select_callback(self, i: discord.Interaction, select: Select):
-        carburant = select.values[0]
-        if carburant != "disabled": await i.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
+        super().__init__(timeout=180)
+        self.original_message_id = original_message_id
+        self.category = category
+
+        # On prépare les options pour le menu déroulant
+        data = load_stocks()
+        fuels = list(data.get(self.category, {}).keys())
+        options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]
+        
+        is_disabled = False
+        if not options:
+            options = [SelectOption(label="Aucun carburant dans cette catégorie", value="disabled")]
+            is_disabled = True
+
+        # On crée le menu déroulant dynamiquement
+        self.fuel_select = Select(
+            placeholder="Choisis le carburant...",
+            options=options,
+            disabled=is_disabled
+        )
+
+        async def select_callback(interaction: discord.Interaction):
+            carburant = interaction.data["values"][0]
+            if carburant != "disabled":
+                await interaction.response.send_modal(
+                    StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id)
+                )
+
+        self.fuel_select.callback = select_callback
+        self.add_item(self.fuel_select)
+
 class CategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_fuel_select(self, i: discord.Interaction, cat: str): await i.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, cat))
@@ -86,6 +108,7 @@ class CategorySelectView(View):
     async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
     async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
+
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -98,6 +121,7 @@ class ResetConfirmationView(View):
         await i.response.edit_message(content="✅ Stocks remis à zéro.", view=None)
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(content="Opération annulée.", view=None)
+
 class StockView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
@@ -106,6 +130,7 @@ class StockView(View):
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_stocks_embed(), view=self)
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
     async def reset_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
+
 @bot.command(name="stocks")
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
 
@@ -162,11 +187,8 @@ class LocationUpdateModal(Modal):
         for field in self.children:
             try: pump_data[field.custom_id] = int(field.value)
             except ValueError: await interaction.followup.send(f"⚠️ La qté pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
-        
-        # On utilise la nouvelle fonction pour le timestamp
         data[self.category_key][self.location_name]["last_updated"] = get_paris_time()
         save_locations(data)
-        
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_locations_embed())
@@ -176,7 +198,7 @@ class LocationUpdateModal(Modal):
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
-        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p) for p in pumps]
+        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p.upper()) for p in pumps]
         self.children[0].options = options if pumps else [SelectOption(label="Aucune pompe trouvée", value="disabled")]
     @discord.ui.select(placeholder="Choisis une POMPE...", custom_id="locations_pump_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
@@ -212,6 +234,7 @@ class LocationsView(View):
 
 @bot.command(name="stations")
 async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=LocationsView())
+
 
 # =================================================================================
 # SECTION 3 : GESTION GÉNÉRALE DU BOT
