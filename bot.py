@@ -13,18 +13,15 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # CHEMIN VERS LE VOLUME PERSISTANT 💾
-# On s'assure que le chemin est correct pour l'environnement de Railway.
 PERSISTENT_STORAGE_PATH = "/data/stocks.json"
 
-# --- Fonctions Utilitaires (MODIFIÉES) ---
+# --- Fonctions Utilitaires ---
 def load_stocks():
     """Charge les données depuis le volume persistant."""
     try:
-        # Utilise le nouveau chemin
         with open(PERSISTENT_STORAGE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        # Si le fichier n'existe pas dans le volume, on le crée avec les valeurs par défaut
         default_data = {
             "entrepot": {"petrole_non_raffine": 0},
             "total": {
@@ -37,12 +34,12 @@ def load_stocks():
 
 def save_stocks(data):
     """Sauvegarde les données dans le volume persistant."""
-    # Utilise le nouveau chemin
     with open(PERSISTENT_STORAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 # --- Embed principal ---
 def create_embed():
+    """Crée et retourne l'embed Discord affichant l'état des stocks."""
     data = load_stocks()
     embed = discord.Embed(title="🏭 Suivi des stocks", color=discord.Color.orange())
     embed.add_field(
@@ -74,7 +71,6 @@ class StockModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         try:
             quantite = int(self.quantite_stock.value)
         except ValueError:
@@ -104,56 +100,77 @@ class StockModal(Modal):
             if original_message:
                 await original_message.edit(embed=create_embed())
                 await interaction.followup.send(f"✅ Stock de **{self.carburant.replace('_', ' ')}** mis à jour !", ephemeral=True)
-        except discord.NotFound:
-            await interaction.followup.send("⚠️ Le message original n'a pas pu être trouvé pour la mise à jour.", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.followup.send("⚠️ Je n'ai pas les permissions pour modifier le message original.", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("⚠️ Le panneau principal a été mis à jour, mais n'a pas pu être actualisé automatiquement.", ephemeral=True)
 
-# --- Vue avec le menu déroulant ---
+# --- MODIFIÉ : La vue du menu déroulant accepte une catégorie ---
 class FuelSelectView(View):
-    def __init__(self, action: str, original_message_id: int):
+    def __init__(self, action: str, original_message_id: int, category: str):
         super().__init__(timeout=180)
         self.action = action
         self.original_message_id = original_message_id
+        self.category = category # "entrepot" ou "total"
         self.populate_options()
 
     def populate_options(self):
         data = load_stocks()
-        all_fuels = list(data.get('entrepot', {}).keys()) + list(data.get('total', {}).keys())
-        options = [SelectOption(label=fuel.replace("_", " ").title(), value=fuel) for fuel in sorted(list(set(all_fuels)))]
+        # Ne charge que les carburants de la catégorie sélectionnée
+        fuels_in_category = list(data.get(self.category, {}).keys())
+        options = [SelectOption(label=fuel.replace("_", " ").title(), value=fuel) for fuel in sorted(fuels_in_category)]
         
         select_menu = self.children[0]
         if not options:
-            select_menu.options = [SelectOption(label="Aucun carburant trouvé", value="disabled")]
+            select_menu.options = [SelectOption(label="Aucun carburant dans cette catégorie", value="disabled")]
             select_menu.disabled = True
         else:
             select_menu.options = options
             select_menu.disabled = False
 
-    @discord.ui.select(placeholder="Choisis le type de carburant...", custom_id="fuel_selector", min_values=1, max_values=1)
+    @discord.ui.select(placeholder="Choisis le type de carburant...", custom_id="fuel_selector")
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         carburant_choisi = select.values[0]
         if carburant_choisi != "disabled":
             await interaction.response.send_modal(StockModal(action=self.action, carburant=carburant_choisi, original_message_id=self.original_message_id))
 
-# --- Vue principale avec les boutons ---
+# --- NOUVEAU : La vue pour choisir la catégorie ---
+class CategorySelectView(View):
+    def __init__(self, action: str, original_message_id: int):
+        super().__init__(timeout=180)
+        self.action = action
+        self.original_message_id = original_message_id
+
+    async def show_fuel_select(self, interaction: discord.Interaction, category: str):
+        # Remplace la vue actuelle (les boutons de catégorie) par la vue du menu déroulant
+        view = FuelSelectView(action=self.action, original_message_id=self.original_message_id, category=category)
+        await interaction.response.edit_message(content="Maintenant, choisis le carburant :", view=view)
+
+    @discord.ui.button(label="📦 Entrepôt", style=discord.ButtonStyle.secondary)
+    async def entrepot_button(self, interaction: discord.Interaction, button: Button):
+        await self.show_fuel_select(interaction, "entrepot")
+
+    @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
+    async def total_button(self, interaction: discord.Interaction, button: Button):
+        await self.show_fuel_select(interaction, "total")
+
+# --- MODIFIÉ : Les boutons principaux ouvrent la vue des catégories ---
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    async def send_fuel_select(self, interaction: discord.Interaction, action: str):
+    async def send_category_select(self, interaction: discord.Interaction, action: str):
         await interaction.response.send_message(
-            view=FuelSelectView(action=action, original_message_id=interaction.message.id), 
+            content="Dans quelle catégorie souhaites-tu faire une modification ?",
+            view=CategorySelectView(action=action, original_message_id=interaction.message.id), 
             ephemeral=True
         )
 
     @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success, custom_id="add_stock")
     async def add_button(self, interaction: discord.Interaction, button: Button):
-        await self.send_fuel_select(interaction, "add")
+        await self.send_category_select(interaction, "add")
 
     @discord.ui.button(label="Retirer", style=discord.ButtonStyle.danger, custom_id="remove_stock")
     async def remove_button(self, interaction: discord.Interaction, button: Button):
-        await self.send_fuel_select(interaction, "remove")
+        await self.send_category_select(interaction, "remove")
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
@@ -167,7 +184,7 @@ async def on_ready():
 
 @bot.command(name="stocks")
 async def stocks(ctx):
-    await ctx.send(embed=create_embed(), view=StockView())
+    await ctx.send(embed=create_embed(), view=View.from_message(await ctx.send(embed=create_embed(), view=StockView())))
 
 # --- Lancement du bot ---
 if TOKEN:
