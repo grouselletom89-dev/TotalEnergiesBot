@@ -1,7 +1,7 @@
 {
     "stations": {
         "Station de Lampaul": {
-            "image_url": "https://cdn.discordapp.com/attachments/1311436878167277579/1425625397634138194/Logo_Total.png?ex=68e8449d&is=68e6f31d&hm=7368237dc0f4ad851cde45dd3b603d4e77d13aeed3c2c1d246314bfb9bd4936c&",
+            "image_url": "https://cdn.discordapp.com/attachments/1311436878167277579/1425625397634138194/Logo_Total.png",
             "last_updated": "N/A",
             "pumps": {
                 "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
@@ -10,7 +10,7 @@
             }
         },
         "Station de Ligoudou": {
-            "image_url": "https://cdn.discordapp.com/attachments/1311436878167277579/1425625397634138194/Logo_Total.png?ex=68e8449d&is=68e6f31d&hm=7368237dc0f4ad851cde45dd3b603d4e77d13aeed3c2c1d246314bfb9bd4936c&",
+            "image_url": "https://cdn.discordapp.com/attachments/1311436878167277579/1425625397634138194/Logo_Total.png",
             "last_updated": "N/A",
             "pumps": {
                 "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
