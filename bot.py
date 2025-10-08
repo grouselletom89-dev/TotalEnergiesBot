@@ -15,7 +15,7 @@ TOKEN = os.environ.get("DISCORD_TOKEN")
 # 2. Définition des Intents
 intents = discord.Intents.default()
 # Décommentez la ligne ci-dessous si vous lisez le contenu des messages :
-# intents.message_content = True 
+intents.message_content = True 
 
 # 3. Définition de l'instance du bot
 bot = commands.Bot(command_prefix="!", intents=intents)
