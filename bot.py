@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-from discord.ui import View, Button, Modal, InputText
+from discord.ui import View, Button, Modal
+from discord import TextInput # <--- Importez TextInput directement depuis discord
 import json
 from datetime import datetime
 
@@ -62,8 +63,8 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        self.add_item(InputText(label="Type de carburant", placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine"))
-        self.add_item(InputText(label="Quantité", placeholder="ex : 100"))
+        self.add_item(TextInput(label="Type de carburant", placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine"))
+        self.add_item(TextInput(label="Quantité", placeholder="ex : 100"))
 
     async def callback(self, interaction: discord.Interaction):
         carburant = self.children[0].value.lower().strip()
