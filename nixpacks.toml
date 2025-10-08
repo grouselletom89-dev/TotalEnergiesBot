@@ -1,5 +1,2 @@
-# nixpacks.toml
-
 [phases.setup]
-# Ajoute les librairies système pour l'audio, nécessaires pour discord.py
 aptPkgs = ["libopus0", "ffmpeg"]
