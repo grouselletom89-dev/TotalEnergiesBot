@@ -93,20 +93,22 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CORRECTION FINALE: SEULEMENT 2 arguments positionnels (label, custom_id)
+        # CORRECTION : Utilisation des arguments nommés (keywords)
         self.add_item(TextInput(
-            "Type de carburant (ex: gazole)", # 1er argument (label)
-            "type_carburant" # 2ème argument (custom_id)
+            label="Type de carburant ou pétrole",
+            custom_id="type_carburant",
+            placeholder="Ex: gazole, petrole_non_raffine..."
         ))
         
         self.add_item(TextInput(
-            "Quantité (ex: 100)", # 1er argument (label)
-            "quantite_stock" # 2ème argument (custom_id)
+            label="Quantité",
+            custom_id="quantite_stock",
+            placeholder="Ex: 100"
         ))
 
 
     async def callback(self, interaction: discord.Interaction):
-        carburant = self.children[0].value.lower().strip()
+        carburant = self.children[0].value.lower().strip().replace(" ", "_")
         
         try:
             quantite = int(self.children[1].value)
@@ -114,28 +116,32 @@ class StockModal(Modal):
             await interaction.response.send_message("⚠️ La quantité doit être un nombre entier.", ephemeral=True)
             return
             
-        # BLOC DE GESTION DES ERREURS
         try:
             data = load_stocks()
-            total = data["total"]
-
-            if carburant not in total:
-                await interaction.response.send_message("❌ Carburant invalide. Utilise : gazole, sp95, sp98, kerosene, petrole_non_raffine", ephemeral=True)
+            
+            # Détermine si on modifie l'entrepôt ou le total
+            target_dict = None
+            if carburant in data["total"]:
+                target_dict = data["total"]
+            elif carburant in data["entrepot"]:
+                target_dict = data["entrepot"]
+            else:
+                valid_fuels = list(data['total'].keys()) + list(data['entrepot'].keys())
+                await interaction.response.send_message(f"❌ Carburant invalide. Essayez : {', '.join(valid_fuels)}", ephemeral=True)
                 return
 
+            # Applique l'action (ajouter/retirer)
             if self.action == "add":
-                total[carburant] += quantite
+                target_dict[carburant] += quantite
             else:
-                total[carburant] = max(0, total[carburant] - quantite)
+                target_dict[carburant] = max(0, target_dict[carburant] - quantite)
 
             save_stocks(data)
             await interaction.response.edit_message(embed=create_embed(), view=StockView())
             
         except Exception as e:
-            # En cas de crash, renvoie un message à l'utilisateur et log l'erreur.
             print(f"Erreur lors du traitement du stock: {e}") 
-            await interaction.response.send_message("💥 Une erreur interne est survenue. Vérifiez la console Railway.", ephemeral=True)
-            return
+            await interaction.response.send_message("💥 Une erreur interne est survenue. Vérifiez la console.", ephemeral=True)
 
 
 # --- Vue avec les boutons ---
@@ -148,7 +154,6 @@ class StockView(View):
         try:
             await interaction.response.send_modal(StockModal(action="add"))
         except Exception as e:
-            # Gère l'erreur d'ouverture de formulaire
             print(f"Erreur lors de l'envoi du Modal: {e}")
             await interaction.response.send_message("💥 Impossible d'ouvrir le formulaire.", ephemeral=True)
 
