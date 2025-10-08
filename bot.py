@@ -94,21 +94,21 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-type_carburant_input = TextInput(
-    label="Type de carburant",
-    custom_id="type_carburant",
-    placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine",
-    style=discord.TextStyle.short
-)
-self.add_item(type_carburant_input)
-
-quantite_input = TextInput(
-    label="Quantité",
-    custom_id="quantite_stock",
-    placeholder="ex : 100",
-    style=discord.TextStyle.short
-)
-self.add_item(quantite_input)
+        # VOS CHAMPS DE TEXTE DOIVENT ÊTRE INDENTÉS ICI, DANS __init__
+        self.add_item(TextInput(
+            label="Type de carburant",
+            custom_id="type_carburant",
+            placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine",
+            style=discord.TextStyle.short
+        ))
+        
+        self.add_item(TextInput(
+            label="Quantité",
+            custom_id="quantite_stock",
+            placeholder="ex : 100",
+            style=discord.TextStyle.short
+        ))
+        # FIN de l'indentation de __init__
 
     async def callback(self, interaction: discord.Interaction):
         carburant = self.children[0].value.lower().strip()
