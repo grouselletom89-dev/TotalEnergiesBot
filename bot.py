@@ -1,18 +1,26 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal
-from discord import TextInput # <--- Importez TextInput directement depuis discord
+from discord import TextInput # Correction de l'ImportError
 import json
 from datetime import datetime
 
 import os
-# ...
-TOKEN = os.environ.get("DISCORD_TOKEN") # Le nom de la variable que vous définirez sur Railway
-# ...
-bot.run(TOKEN)
 
+# --- DÉFINITION DU BOT (DOIT ÊTRE FAITE AVANT TOUTE COMMANDE) ---
+
+# 1. Récupération du jeton
+TOKEN = os.environ.get("DISCORD_TOKEN")
+
+# 2. Définition des Intents
 intents = discord.Intents.default()
+# Décommentez la ligne ci-dessous si vous lisez le contenu des messages :
+# intents.message_content = True 
+
+# 3. Définition de l'instance du bot
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# --- Fin de la partie corrigée ---
 
 
 # --- Gestion des stocks ---
