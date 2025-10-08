@@ -198,7 +198,8 @@ def load_annuaire():
     try:
         with open(ANNUAIRE_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except FileNotFoundError:
-        default_data = {"Patron": [], "Co-Patron": [], "Chefs d'équipe": [], "Employés": []}
+        # --- MODIFIÉ : Utilise les noms de rôle au singulier ---
+        default_data = {"Patron": [], "Co-Patron": [], "Chef d'équipe": [], "Employé": []}
         save_annuaire(default_data); return default_data
 def save_annuaire(data):
     with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
@@ -206,7 +207,8 @@ def save_annuaire(data):
 async def create_annuaire_embed(guild: discord.Guild):
     saved_data = load_annuaire()
     embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
-    role_order = {"Patron": "👑", "Co-Patron": "⭐", "Chefs d'équipe": "📋", "Employés": "👨‍💼"}
+    # --- MODIFIÉ : Utilise les noms de rôle au singulier ---
+    role_order = {"Patron": "👑", "Co-Patron": "⭐", "Chef d'équipe": "📋", "Employé": "👨‍💼"}
     for role_name, icon in role_order.items():
         role = discord.utils.get(guild.roles, name=role_name)
         if not role: continue
@@ -215,9 +217,10 @@ async def create_annuaire_embed(guild: discord.Guild):
         value_str = ""
         for member in sorted(members_with_role, key=lambda m: m.display_name):
             number = None
-            for entry in saved_data.get(role_name, []):
-                if entry['id'] == member.id:
-                    number = entry.get('number'); break
+            # On cherche dans toutes les listes du JSON, car un utilisateur a pu changer de rôle
+            found_user = next((user for users in saved_data.values() for user in users if user['id'] == member.id), None)
+            if found_user:
+                number = found_user.get('number')
             value_str += f"• {member.display_name} → {'`' + number + '`' if number else ' Pas encore renseigné'}\n"
         if value_str: embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
     embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
@@ -230,7 +233,8 @@ class AnnuaireModal(Modal, title="Mon numéro de téléphone"):
         data, user, number = load_annuaire(), interaction.user, self.phone_number.value.strip()
         for role_group in data.values():
             role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
-        role_priority = ["Patron", "Co-Patron", "Chefs d'équipe", "Employés"]
+        # --- MODIFIÉ : Utilise les noms de rôle au singulier ---
+        role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
         user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), None)
         if user_role_name and number:
             data.setdefault(user_role_name, []).append({"id": user.id, "name": user.display_name, "number": number})
