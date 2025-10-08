@@ -1,0 +1,12 @@
+{
+  "entrepot": {
+    "petrole_non_raffine": 0
+  },
+  "total": {
+    "petrole_non_raffine": 0,
+    "gazole": 0,
+    "sp95": 0,
+    "sp98": 0,
+    "kerosene": 0
+  }
+}
