@@ -1,7 +1,7 @@
 {
     "stations": {
         "Station de Lampaul": {
-            "image_url": "https://cdn.discordapp.com/attachments/1425629380058677300/1425629425386520597/Logo_Total.png",
+            "image_url": "https://cdn.discordapp.com/attachments/1425629380058677300/1425630432451624960/kerosone.jpg",
             "last_updated": "N/A",
             "pumps": {
                 "Pompe 1": { "gazole": 0, "sp95": 0, "sp98": 0 },
