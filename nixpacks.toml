@@ -1,0 +1,5 @@
+# nixpacks.toml
+
+[phases.setup]
+# Ajoute les librairies système pour l'audio et la voix
+aptPkgs = ["libopus0", "ffmpeg"]
