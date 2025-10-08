@@ -16,6 +16,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
+ANNUAIRE_PATH = "/data/annuaire.json" # Nouveau fichier pour l'annuaire
 
 def get_paris_time():
     paris_tz = pytz.timezone("Europe/Paris")
@@ -23,20 +24,17 @@ def get_paris_time():
 
 # =================================================================================
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
+# (Code inchangé, compacté pour la lisibilité)
 # =================================================================================
-
 def load_stocks():
     try:
         with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except FileNotFoundError: return get_default_stocks()
-
 def save_stocks(data):
     with open(STOCKS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
-
 def get_default_stocks():
     default_data = {"entrepot": {"petrole_non_raffine": 0}, "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}}
     save_stocks(default_data); return default_data
-
 def create_stocks_embed():
     data = load_stocks()
     embed = discord.Embed(title="⛽ Suivi des stocks - TotalEnergies", color=0xFF7900)
@@ -48,7 +46,6 @@ def create_stocks_embed():
     embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
-
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
         self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
@@ -66,41 +63,17 @@ class StockModal(Modal):
             if msg: await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais actualisation auto. échouée.", ephemeral=True)
-
-# --- CORRIGÉ : La vue du menu déroulant a été réécrite pour être plus fiable ---
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
-        super().__init__(timeout=180)
-        self.original_message_id = original_message_id
-        self.category = category
-
-        # On prépare les options pour le menu déroulant
-        data = load_stocks()
-        fuels = list(data.get(self.category, {}).keys())
-        options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]
-        
-        is_disabled = False
-        if not options:
-            options = [SelectOption(label="Aucun carburant dans cette catégorie", value="disabled")]
-            is_disabled = True
-
-        # On crée le menu déroulant dynamiquement
-        self.fuel_select = Select(
-            placeholder="Choisis le carburant...",
-            options=options,
-            disabled=is_disabled
-        )
-
+        super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category
+        data = load_stocks(); fuels = list(data.get(self.category, {}).keys()); options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]; 
+        is_disabled = not bool(options)
+        if not options: options = [SelectOption(label="Aucun carburant ici", value="disabled")]
+        self.fuel_select = Select(placeholder="Choisis le carburant...", options=options, disabled=is_disabled)
         async def select_callback(interaction: discord.Interaction):
             carburant = interaction.data["values"][0]
-            if carburant != "disabled":
-                await interaction.response.send_modal(
-                    StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id)
-                )
-
-        self.fuel_select.callback = select_callback
-        self.add_item(self.fuel_select)
-
+            if carburant != "disabled": await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
+        self.fuel_select.callback = select_callback; self.add_item(self.fuel_select)
 class CategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_fuel_select(self, i: discord.Interaction, cat: str): await i.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, cat))
@@ -108,7 +81,6 @@ class CategorySelectView(View):
     async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
     async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
-
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -121,7 +93,6 @@ class ResetConfirmationView(View):
         await i.response.edit_message(content="✅ Stocks remis à zéro.", view=None)
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(content="Opération annulée.", view=None)
-
 class StockView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
@@ -130,34 +101,25 @@ class StockView(View):
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_stocks_embed(), view=self)
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
     async def reset_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
-
 @bot.command(name="stocks")
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
 
 
 # =================================================================================
 # SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
+# (Code inchangé, compacté pour la lisibilité)
 # =================================================================================
-
 def load_locations():
     try:
         with open(LOCATIONS_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except FileNotFoundError: return get_default_locations()
-
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
-
 def get_default_locations():
-    default_data = {
-        "stations": {"Station de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "ports": {"Port de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "aeroport": {"Aéroport": {"last_updated": "N/A", "pumps": {"POMPE 1": {"kerosene": 0}}}}
-    }
+    default_data = {"stations": {"Station de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"last_updated": "N/A", "pumps": {"POMPE 1": {"kerosene": 0}}}}}
     save_locations(default_data); return default_data
-
 def create_locations_embed():
-    data = load_locations()
-    embed = discord.Embed(title="Statut des pompes", color=0x0099ff)
+    data = load_locations(); embed = discord.Embed(title="Statut des pompes", color=0x0099ff)
     categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
@@ -167,34 +129,28 @@ def create_locations_embed():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
                 pump_text += f"🔧 **{pump_name.upper()}**\n"
-                for fuel, qty in pump_fuels.items():
-                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
+                for fuel, qty in pump_fuels.items(): pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
             embed.add_field(name=loc_name, value=pump_text, inline=True)
         if len(locations) % 2 != 0: embed.add_field(name="\u200b", value="\u200b", inline=True)
         if cat_key != list(categories.keys())[-1]: embed.add_field(name="\u200b", value="\u200b", inline=False)
     return embed
-
 class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
         super().__init__(title=f"{pump_name} - {location_name}"); self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
         fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
         for fuel, qty in fuels.items(): self.add_item(TextInput(label=f"Nouv. qté pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        data = load_locations()
-        pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
+        await interaction.response.defer(ephemeral=True); data = load_locations(); pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
         for field in self.children:
             try: pump_data[field.custom_id] = int(field.value)
             except ValueError: await interaction.followup.send(f"⚠️ La qté pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
-        data[self.category_key][self.location_name]["last_updated"] = get_paris_time()
-        save_locations(data)
+        data[self.category_key][self.location_name]["last_updated"] = get_paris_time(); save_locations(data)
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_locations_embed())
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais actualisation auto. échouée.", ephemeral=True)
-
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
@@ -204,7 +160,6 @@ class PumpSelectView(View):
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
         if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
-
 class LocationSelectView(View):
     def __init__(self, category_key: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.original_message_id = category_key, original_message_id
@@ -214,7 +169,6 @@ class LocationSelectView(View):
     async def select_callback(self, i: discord.Interaction, select: Select):
         loc_name = select.values[0]
         if loc_name != "disabled": await i.response.edit_message(content="Choisis une POMPE :", view=PumpSelectView(self.category_key, loc_name, self.original_message_id))
-
 class LocationCategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_location_select(self, i: discord.Interaction, cat_key: str): await i.response.edit_message(content="Choisis un lieu :", view=LocationSelectView(cat_key, self.original_message_id))
@@ -224,26 +178,144 @@ class LocationCategorySelectView(View):
     async def ports_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "ports")
     @discord.ui.button(label="Aéroport", style=discord.ButtonStyle.secondary)
     async def aeroport_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "aeroport")
-
 class LocationsView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.primary, custom_id="update_location")
     async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_locations_embed(), view=self)
-
 @bot.command(name="stations")
 async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=LocationsView())
 
 
 # =================================================================================
-# SECTION 3 : GESTION GÉNÉRALE DU BOT
+# SECTION 3 : NOUVELLE LOGIQUE POUR LA COMMANDE !ANNUAIRE
+# =================================================================================
+
+# --- Fonctions Utilitaires pour !annuaire ---
+def load_annuaire():
+    """Charge les données de l'annuaire depuis le volume persistant."""
+    try:
+        with open(ANNUAIRE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # Crée le fichier avec une structure vide si non trouvé
+        default_data = {"Patron": [], "Co-Patron": [], "Chefs d'équipe": [], "Employés": []}
+        save_annuaire(default_data)
+        return default_data
+
+def save_annuaire(data):
+    """Sauvegarde les données de l'annuaire dans le volume persistant."""
+    with open(ANNUAIRE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+# --- Embed pour !annuaire ---
+def create_annuaire_embed():
+    data = load_annuaire()
+    embed = discord.Embed(title="📞 Annuaire Téléphonique", color=discord.Color.blue())
+    
+    # Ordre et icônes des rôles
+    role_order = {
+        "Patron": "👑",
+        "Co-Patron": "⭐",
+        "Chefs d'équipe": "📋",
+        "Employés": "👨‍💼"
+    }
+
+    for role_name, icon in role_order.items():
+        entries = data.get(role_name, [])
+        if not entries:
+            continue # Ne pas afficher le rôle s'il n'y a personne
+            
+        value_str = ""
+        for entry in entries:
+            # Affiche "Non renseigné" si le numéro est vide ou nul
+            number = entry.get("number")
+            if not number:
+                value_str += f"• {entry['name']} → ❌ Non renseigné\n"
+            else:
+                value_str += f"• {entry['name']} → `{number}`\n"
+        
+        embed.add_field(name=f"{icon} {role_name}", value=value_str, inline=False)
+
+    embed.set_footer(text=f"Mis à jour le {get_paris_time()}")
+    return embed
+
+# --- Formulaire pour ajouter/modifier un numéro ---
+class AnnuaireModal(Modal, title="Mon numéro de téléphone"):
+    phone_number = TextInput(
+        label="Saisis ton numéro ici",
+        placeholder="Ex: 0612345678",
+        required=False # Le champ n'est pas obligatoire pour pouvoir le supprimer
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        data = load_annuaire()
+        user = interaction.user
+        number = self.phone_number.value.strip()
+
+        # Retrouve et supprime l'ancienne entrée de l'utilisateur, peu importe son ancien rôle
+        for role_group in data.values():
+            # Utilise une compréhension de liste pour ne pas modifier la liste pendant l'itération
+            new_role_group = [entry for entry in role_group if entry['id'] != user.id]
+            role_group.clear()
+            role_group.extend(new_role_group)
+        
+        # Logique pour trouver le rôle le plus haut de l'utilisateur
+        # IMPORTANT: Configure l'ordre de tes rôles ici, du plus haut au plus bas
+        role_priority = ["Patron", "Co-Patron", "Chefs d'équipe", "Employés"]
+        user_role_name = None
+        for role_name in role_priority:
+            if discord.utils.get(user.roles, name=role_name):
+                user_role_name = role_name
+                break
+        
+        # Ajoute la nouvelle entrée si un rôle correspondant est trouvé et un numéro est fourni
+        if user_role_name and number:
+            data[user_role_name].append({"id": user.id, "name": user.display_name, "number": number})
+        
+        save_annuaire(data)
+
+        # Met à jour le message de l'annuaire
+        try:
+            # On suppose qu'il n'y a qu'un seul message d'annuaire par salon
+            async for message in interaction.channel.history(limit=100):
+                if message.author == bot.user and message.embeds and message.embeds[0].title == "📞 Annuaire Téléphonique":
+                    await message.edit(embed=create_annuaire_embed())
+                    break
+            await interaction.followup.send("✅ Ton numéro a été mis à jour dans l'annuaire !", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("✅ Ton numéro a été sauvegardé, mais le panneau n'a pas pu être actualisé.", ephemeral=True)
+
+# --- Vue pour l'annuaire ---
+class AnnuaireView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
+    async def update_number_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(AnnuaireModal())
+
+    @discord.ui.button(label="Signaler numéro invalide", style=discord.ButtonStyle.danger, custom_id="report_annuaire_number")
+    async def report_number_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
+
+# --- Commande !annuaire ---
+@bot.command(name="annuaire")
+async def annuaire(ctx):
+    await ctx.send(embed=create_annuaire_embed(), view=AnnuaireView())
+
+
+# =================================================================================
+# SECTION 4 : GESTION GÉNÉRALE DU BOT
 # =================================================================================
 @bot.event
 async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
     bot.add_view(StockView())
     bot.add_view(LocationsView())
+    bot.add_view(AnnuaireView()) # Ajoute la persistance pour la nouvelle vue
 
 # --- Lancement du bot ---
 if TOKEN:
