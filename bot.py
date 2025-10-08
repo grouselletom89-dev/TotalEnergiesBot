@@ -74,7 +74,7 @@ def create_embed():
         inline=False
     )
 
-    # CORRECTION DU SYNTAXERROR (f"..." au lieu de ff"...")
+    # Chaîne de texte corrigée (SyntaxError: ff au lieu de f)
     total_text = (
         f"• Pétrole non raffiné : **{total['petrole_non_raffine']}**\n"
         f"• Gazole : **{total['gazole']}**\n"
@@ -94,16 +94,17 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # CHAMPS DE TEXTE CORRECTEMENT INDENTÉS DANS __init__
+        # CORRECTION CRITIQUE: Retire 'label=' pour utiliser l'argument positionnel
+        # et éviter le 'unexpected keyword argument label'.
         self.add_item(TextInput(
-            label="Type de carburant",
+            "Type de carburant", # Passé comme argument positionnel (label)
             custom_id="type_carburant",
             placeholder="ex : gazole, sp95, sp98, kerosene, petrole_non_raffine",
             style=discord.TextStyle.short
         ))
         
         self.add_item(TextInput(
-            label="Quantité",
+            "Quantité", # Passé comme argument positionnel (label)
             custom_id="quantite_stock",
             placeholder="ex : 100",
             style=discord.TextStyle.short
@@ -119,7 +120,7 @@ class StockModal(Modal):
             await interaction.response.send_message("⚠️ La quantité doit être un nombre entier.", ephemeral=True)
             return
             
-        # BLOC DE GESTION DES DONNÉES ET DES ERREURS
+        # BLOC DE GESTION DES ERREURS
         try:
             data = load_stocks()
             total = data["total"]
@@ -137,7 +138,7 @@ class StockModal(Modal):
             await interaction.response.edit_message(embed=create_embed(), view=StockView())
             
         except Exception as e:
-            # Si une erreur interne se produit, empêche l'échec de l'interaction et le log
+            # En cas de crash, renvoie un message à l'utilisateur et log l'erreur.
             print(f"Erreur lors du traitement du stock: {e}") 
             await interaction.response.send_message("💥 Une erreur interne est survenue. Vérifiez la console Railway.", ephemeral=True)
             return
@@ -147,13 +148,13 @@ class StockModal(Modal):
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
-        # Les custom_id sont définis directement dans les décorateurs de fonction
 
     @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success, custom_id="add_stock")
     async def add_button(self, interaction: discord.Interaction, button: Button):
         try:
             await interaction.response.send_modal(StockModal(action="add"))
         except Exception as e:
+            # Gère l'erreur d'ouverture de formulaire
             print(f"Erreur lors de l'envoi du Modal: {e}")
             await interaction.response.send_message("💥 Impossible d'ouvrir le formulaire.", ephemeral=True)
 
@@ -167,7 +168,6 @@ class StockView(View):
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        # Le rafraîchissement ne devrait jamais échouer
         await interaction.response.edit_message(embed=create_embed(), view=self)
 
 
