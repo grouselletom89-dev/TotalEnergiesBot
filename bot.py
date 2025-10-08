@@ -20,7 +20,6 @@ LOCATIONS_PATH = "/data/locations.json"
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
 # =================================================================================
 
-# --- Fonctions Utilitaires pour !stocks ---
 def load_stocks():
     try:
         with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
@@ -33,7 +32,6 @@ def get_default_stocks():
     default_data = {"entrepot": {"petrole_non_raffine": 0}, "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}}
     save_stocks(default_data); return default_data
 
-# --- Embed pour !stocks ---
 def create_stocks_embed():
     data = load_stocks()
     embed = discord.Embed(title="⛽ Suivi des stocks - TotalEnergies", color=0xFF7900)
@@ -46,7 +44,6 @@ def create_stocks_embed():
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
 
-# --- Vues et Modals pour !stocks ---
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
         self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
@@ -64,20 +61,17 @@ class StockModal(Modal):
             if msg: await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais actualisation auto. échouée.", ephemeral=True)
-
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
         super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category; self.populate_options()
     def populate_options(self):
-        data, fuels = load_stocks(), list(data.get(self.category, {}).keys()); options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]
-        select_menu = self.children[0]
+        data, fuels = load_stocks(), list(data.get(self.category, {}).keys()); options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]; select_menu = self.children[0]
         if not options: select_menu.options, select_menu.disabled = [SelectOption(label="Aucun carburant ici", value="disabled")], True
         else: select_menu.options, select_menu.disabled = options, False
     @discord.ui.select(placeholder="Choisis le carburant...", custom_id="stocks_fuel_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
         carburant = select.values[0]
         if carburant != "disabled": await i.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
-
 class CategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_fuel_select(self, i: discord.Interaction, cat: str): await i.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, cat))
@@ -85,7 +79,6 @@ class CategorySelectView(View):
     async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
     async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
-
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -98,7 +91,6 @@ class ResetConfirmationView(View):
         await i.response.edit_message(content="✅ Stocks remis à zéro.", view=None)
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(content="Opération annulée.", view=None)
-
 class StockView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
@@ -107,7 +99,6 @@ class StockView(View):
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_stocks_embed(), view=self)
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
     async def reset_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
-
 @bot.command(name="stocks")
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
 
@@ -116,57 +107,59 @@ async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockVie
 # SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
 # =================================================================================
 
-# --- Fonctions Utilitaires pour !stations ---
+# --- MODIFIÉ : Fonctions Utilitaires pour !stations ---
 def load_locations():
     """Charge les données des stations depuis le volume persistant."""
     try:
-        with open(LOCATIONS_PATH, "r", encoding="utf-8") as f: return json.load(f)
-    except FileNotFoundError: return {"stations": {}, "ports": {}, "aeroport": {}}
+        with open(LOCATIONS_PATH, "r", encoding="utf-8") as f: 
+            return json.load(f)
+    except FileNotFoundError:
+        # Si le fichier n'existe pas, on le crée avec les valeurs par défaut
+        return get_default_locations()
 
 def save_locations(data):
     """Sauvegarde les données des stations dans le volume persistant."""
-    with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
+    with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: 
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
-# --- CORRIGÉ : L'embed pour la commande !stations ---
+# --- NOUVEAU : Fonction pour créer le fichier de stations par défaut ---
+def get_default_locations():
+    """Retourne la structure par défaut pour les stations et la sauvegarde."""
+    default_data = {
+        "stations": {
+            "Station de Lampaul": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}},
+            "Station de Ligoudou": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}
+        },
+        "ports": {
+            "Port de Lampaul": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}},
+            "Port de Ligoudou": {"last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}
+        },
+        "aeroport": {
+            "Aéroport": {"last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}
+        }
+    }
+    save_locations(default_data)
+    return default_data
+
+# --- Embed pour !stations ---
 def create_locations_embed():
     data = load_locations()
-    embed = discord.Embed(
-        title="⛽ Statut des pompes",
-        color=0x3498db
-    )
-    
-    categories = {
-        "stations": " Stations",
-        "ports": " Ports",
-        "aeroport": " Aéroport"
-    }
-
-    # Ajoute un champ vide au début pour l'espacement
+    embed = discord.Embed(title="⛽ Statut des pompes", color=0x3498db)
+    categories = {"stations": " Stations", "ports": " Ports", "aeroport": " Aéroport"}
     embed.add_field(name="\u200b", value="\u200b", inline=False)
-    
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
         if not locations: continue
-        
         embed.add_field(name=f"**{cat_name.upper()}**", value="\u200b", inline=False)
-        
-        # On parcourt les lieux pour les ajouter en colonnes
-        for loc_name, loc_data in locations.items():
+        for i, (loc_name, loc_data) in enumerate(locations.items()):
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
                 pump_text += f"🔧 **{pump_name}**\n"
-                for fuel, qty in pump_fuels.items():
-                    pump_text += f"› {fuel.capitalize()}: {qty:,}L\n".replace(',', ' ')
+                for fuel, qty in pump_fuels.items(): pump_text += f"› {fuel.capitalize()}: {qty:,}L\n".replace(',', ' ')
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
             embed.add_field(name=loc_name, value=pump_text, inline=True)
-        
-        # Ajoute un champ vide si le nombre de lieux est impair pour garder l'alignement
-        if len(locations) % 2 != 0:
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-        # Ajoute un espaceur entre les grandes catégories
+        if len(locations) % 2 != 0: embed.add_field(name="\u200b", value="\u200b", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=False)
-
     return embed
 
 # --- Vues et Modals pour la mise à jour des stations ---
@@ -175,8 +168,7 @@ class LocationUpdateModal(Modal):
         super().__init__(title=f"{pump_name} - {location_name}")
         self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
         fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
-        for fuel, qty in fuels.items():
-            self.add_item(TextInput(label=f"Nouv. qté pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
+        for fuel, qty in fuels.items(): self.add_item(TextInput(label=f"Nouv. qté pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data = load_locations()
