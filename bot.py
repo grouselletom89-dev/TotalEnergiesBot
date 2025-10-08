@@ -5,6 +5,7 @@ from discord import SelectOption
 import json
 from datetime import datetime
 import os
+import pytz # On importe la nouvelle librairie
 
 # --- DÉFINITION DU BOT ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -15,6 +16,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
+
+# --- NOUVEAU : Fonction pour obtenir l'heure de Paris ---
+def get_paris_time():
+    """Retourne la date et l'heure actuelles formatées pour le fuseau horaire de Paris."""
+    paris_tz = pytz.timezone("Europe/Paris")
+    return datetime.now(paris_tz).strftime('%d/%m/%Y %H:%M:%S')
 
 # =================================================================================
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
@@ -40,7 +47,7 @@ def create_stocks_embed():
     embed.add_field(name="📊 Total des produits finis", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
     carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
-    embed.set_footer(text=f"Dernière mise à jour le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+    embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}") # Utilise la nouvelle fonction
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
 
@@ -123,43 +130,25 @@ def get_default_locations():
     }
     save_locations(default_data); return default_data
 
-# --- CORRIGÉ : L'embed pour la commande !stations avec la bonne mise en page ---
 def create_locations_embed():
     data = load_locations()
     embed = discord.Embed(title="Statut des pompes", color=0x0099ff)
-
-    categories = {
-        "stations": "🚉 Stations",
-        "ports": "⚓ Ports",
-        "aeroport": "✈️ Aéroport"
-    }
-
+    categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
-        if not locations:
-            continue
-        
-        # Titre de la catégorie
+        if not locations: continue
         embed.add_field(name=f"**{cat_name}**", value="\u200b", inline=False)
-        
-        # Contenu
         for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
-                pump_text += f"🔧 **{pump_name.upper()}**\n" # POMPE en majuscules
+                pump_text += f"🔧 **{pump_name.upper()}**\n"
                 for fuel, qty in pump_fuels.items():
                     pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
-                pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n" # Ajout d'espace après la date
+            pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
             embed.add_field(name=loc_name, value=pump_text, inline=True)
-        
-        if len(locations) % 2 != 0:
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-        # Force un grand espace pour créer un bloc distinct
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
-            
+        if len(locations) % 2 != 0: embed.add_field(name="\u200b", value="\u200b", inline=True)
+        if cat_key != list(categories.keys())[-1]: embed.add_field(name="\u200b", value="\u200b", inline=False)
     return embed
-
 
 class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
@@ -173,8 +162,11 @@ class LocationUpdateModal(Modal):
         for field in self.children:
             try: pump_data[field.custom_id] = int(field.value)
             except ValueError: await interaction.followup.send(f"⚠️ La qté pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
-        data[self.category_key][self.location_name]["last_updated"] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        
+        # On utilise la nouvelle fonction pour le timestamp
+        data[self.category_key][self.location_name]["last_updated"] = get_paris_time()
         save_locations(data)
+        
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_locations_embed())
@@ -216,7 +208,7 @@ class LocationsView(View):
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.primary, custom_id="update_location")
     async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
-    async def refresh_button(self, interaction: discord.Interaction, button: Button): await interaction.response.edit_message(embed=create_locations_embed(), view=self)
+    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_locations_embed(), view=self)
 
 @bot.command(name="stations")
 async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=LocationsView())
