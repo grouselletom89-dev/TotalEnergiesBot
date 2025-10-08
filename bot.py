@@ -12,29 +12,37 @@ intents = discord.Intents.default()
 intents.message_content = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Fonctions Utilitaires ---
+# CHEMIN VERS LE VOLUME PERSISTANT 💾
+# On s'assure que le chemin est correct pour l'environnement de Railway.
+PERSISTENT_STORAGE_PATH = "/data/stocks.json"
+
+# --- Fonctions Utilitaires (MODIFIÉES) ---
 def load_stocks():
-    """Charge les données de stock depuis stocks.json, ou initialise le fichier s'il n'existe pas."""
+    """Charge les données depuis le volume persistant."""
     try:
-        with open("stocks.json", "r", encoding="utf-8") as f:
+        # Utilise le nouveau chemin
+        with open(PERSISTENT_STORAGE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        return {
+        # Si le fichier n'existe pas dans le volume, on le crée avec les valeurs par défaut
+        default_data = {
             "entrepot": {"petrole_non_raffine": 0},
             "total": {
                 "petrole_non_raffine": 0, "gazole": 0,
                 "sp95": 0, "sp98": 0, "kerosene": 0
             }
         }
+        save_stocks(default_data)
+        return default_data
 
 def save_stocks(data):
-    """Sauvegarde les données de stock dans stocks.json."""
-    with open("stocks.json", "w", encoding="utf-8") as f:
+    """Sauvegarde les données dans le volume persistant."""
+    # Utilise le nouveau chemin
+    with open(PERSISTENT_STORAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 # --- Embed principal ---
 def create_embed():
-    """Crée et retourne l'embed Discord affichant l'état des stocks."""
     data = load_stocks()
     embed = discord.Embed(title="🏭 Suivi des stocks", color=discord.Color.orange())
     embed.add_field(
@@ -65,7 +73,7 @@ class StockModal(Modal):
     quantite_stock = TextInput(label="Quantité", placeholder="Ex: 100")
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True) # Accuse réception pour éviter un timeout
+        await interaction.response.defer(ephemeral=True)
         
         try:
             quantite = int(self.quantite_stock.value)
@@ -92,7 +100,6 @@ class StockModal(Modal):
         save_stocks(data)
 
         try:
-            # Récupère le message original et le met à jour
             original_message = await interaction.channel.fetch_message(self.original_message_id)
             if original_message:
                 await original_message.edit(embed=create_embed())
@@ -135,7 +142,6 @@ class StockView(View):
         super().__init__(timeout=None)
 
     async def send_fuel_select(self, interaction: discord.Interaction, action: str):
-        # On passe l'ID du message sur lequel l'utilisateur a cliqué
         await interaction.response.send_message(
             view=FuelSelectView(action=action, original_message_id=interaction.message.id), 
             ephemeral=True
