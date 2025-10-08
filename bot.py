@@ -123,24 +123,43 @@ def get_default_locations():
     }
     save_locations(default_data); return default_data
 
+# --- CORRIGÉ : L'embed pour la commande !stations avec la bonne mise en page ---
 def create_locations_embed():
-    data = load_locations(); embed = discord.Embed(title="⛽ Statut des pompes", color=0x3498db)
-    categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
-    is_first_category = True
+    data = load_locations()
+    embed = discord.Embed(title="⛽ Statut des pompes", color=0x3498db)
+    
+    categories = {
+        "stations": "🚉 Stations",
+        "ports": "⚓ Ports",
+        "aeroport": "✈️ Aéroport"
+    }
+
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
         if not locations: continue
-        if not is_first_category: embed.add_field(name="\u200b", value="\u200b", inline=False)
-        is_first_category = False
-        embed.add_field(name=f"**{cat_name}**", value="", inline=False)
+        
+        # Ajoute le titre de la catégorie
+        embed.add_field(name=f"**{cat_name}**", value="\u200b", inline=False)
+        
+        # Ajoute chaque lieu en colonne
         for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
-                pump_text += f"🔧 **{pump_name}**\n";
-                for fuel, qty in pump_fuels.items(): pump_text += f"› {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
+                pump_text += f"🔧 **{pump_name}**\n"
+                for fuel, qty in pump_fuels.items():
+                    # Ajout des emojis de pompe à essence pour chaque carburant
+                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*"
             embed.add_field(name=loc_name, value=pump_text, inline=True)
-        if len(locations) > 1 and len(locations) % 2 != 0: embed.add_field(name="\u200b", value="\u200b", inline=True)
+        
+        # Ajoute un champ vide si le nombre de lieux est impair pour garder l'alignement
+        # avant de passer à la catégorie suivante.
+        if len(locations) % 2 != 0:
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+        # Ajoute un grand espaceur invisible pour séparer les blocs de catégories
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+            
     return embed
 
 class LocationUpdateModal(Modal):
@@ -149,16 +168,20 @@ class LocationUpdateModal(Modal):
         fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
         for fuel, qty in fuels.items(): self.add_item(TextInput(label=f"Nouv. qté pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True); data = load_locations(); pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
+        await interaction.response.defer(ephemeral=True)
+        data = load_locations()
+        pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
         for field in self.children:
             try: pump_data[field.custom_id] = int(field.value)
             except ValueError: await interaction.followup.send(f"⚠️ La qté pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
-        data[self.category_key][self.location_name]["last_updated"] = datetime.now().strftime('%d/%m/%Y %H:%M:%S'); save_locations(data)
+        data[self.category_key][self.location_name]["last_updated"] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        save_locations(data)
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_locations_embed())
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais actualisation auto. échouée.", ephemeral=True)
+
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
@@ -168,6 +191,7 @@ class PumpSelectView(View):
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
         if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
+
 class LocationSelectView(View):
     def __init__(self, category_key: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.original_message_id = category_key, original_message_id
@@ -177,6 +201,7 @@ class LocationSelectView(View):
     async def select_callback(self, i: discord.Interaction, select: Select):
         loc_name = select.values[0]
         if loc_name != "disabled": await i.response.edit_message(content="Choisis une pompe :", view=PumpSelectView(self.category_key, loc_name, self.original_message_id))
+
 class LocationCategorySelectView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_location_select(self, i: discord.Interaction, cat_key: str): await i.response.edit_message(content="Choisis un lieu :", view=LocationSelectView(cat_key, self.original_message_id))
@@ -187,7 +212,7 @@ class LocationCategorySelectView(View):
     @discord.ui.button(label="Aéroport", style=discord.ButtonStyle.secondary)
     async def aeroport_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "aeroport")
 
-# --- MODIFIÉ : La vue pour !stations avec le bouton Rafraîchir ---
+# --- MODIFIÉ : La vue pour !stations avec le bouton Historique supprimé ---
 class LocationsView(View):
     def __init__(self): 
         super().__init__(timeout=None)
@@ -199,10 +224,6 @@ class LocationsView(View):
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.edit_message(embed=create_locations_embed(), view=self)
-
-    @discord.ui.button(label="Historique complet", style=discord.ButtonStyle.secondary, custom_id="location_history")
-    async def history_button(self, i: discord.Interaction, b: Button): 
-        await i.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
 
 @bot.command(name="stations")
 async def stations(ctx): await ctx.send(embed=create_locations_embed(), view=LocationsView())
