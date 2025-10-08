@@ -119,13 +119,8 @@ def load_locations():
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 def get_default_locations():
-    default_data = {
-        "stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "POMPE 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"POMPE 1": {"kerosene": 0}}}}
-    }
+    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
     save_locations(default_data); return default_data
-
 def create_locations_embeds():
     data = load_locations()
     embeds = []
@@ -163,15 +158,20 @@ class LocationUpdateModal(Modal):
             if msg: await msg.edit(embeds=create_locations_embeds())
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais actualisation auto. échouée.", ephemeral=True)
+
+# --- CORRIGÉ : On n'utilise plus .upper() pour les options du menu déroulant ---
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
-        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p.upper()) for p in pumps]
+        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys())
+        # On enlève le .upper() pour que les clés correspondent exactement au JSON
+        options = [SelectOption(label=p) for p in pumps]
         self.children[0].options = options if pumps else [SelectOption(label="Aucune pompe trouvée", value="disabled")]
-    @discord.ui.select(placeholder="Choisis une POMPE...", custom_id="locations_pump_selector")
+    @discord.ui.select(placeholder="Choisis une pompe...", custom_id="locations_pump_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
         if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
+
 class LocationSelectView(View):
     def __init__(self, category_key: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.original_message_id = category_key, original_message_id
@@ -240,14 +240,11 @@ class AnnuaireModal(Modal):
         self.add_item(TextInput(label="Ton numéro (laisse vide pour supprimer)", placeholder="Ex: 0612345678", required=False, default=current_number))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        number = self.children[0].value.strip()
-        data, user = load_annuaire(), interaction.user
-        for role_group in data.values():
-            role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
+        number = self.children[0].value.strip(); data, user = load_annuaire(), interaction.user
+        for role_group in data.values(): role_group[:] = [entry for entry in role_group if entry['id'] != user.id]
         role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
         user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), None)
-        if user_role_name and number:
-            data.setdefault(user_role_name, []).append({"id": user.id, "name": user.display_name, "number": number})
+        if user_role_name and number: data.setdefault(user_role_name, []).append({"id": user.id, "name": user.display_name, "number": number})
         save_annuaire(data)
         try:
             async for message in interaction.channel.history(limit=100):
@@ -259,8 +256,7 @@ class AnnuaireView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Saisir / Modifier mon numéro", style=discord.ButtonStyle.primary, custom_id="update_annuaire_number")
     async def update_number_button(self, interaction: discord.Interaction, button: Button):
-        data = load_annuaire()
-        current_number = next((user.get('number', '') for group in data.values() for user in group if user['id'] == interaction.user.id), "")
+        data = load_annuaire(); current_number = next((user.get('number', '') for group in data.values() for user in group if user['id'] == interaction.user.id), "")
         await interaction.response.send_modal(AnnuaireModal(current_number=current_number))
     @discord.ui.button(label="Demander d'actualiser", style=discord.ButtonStyle.secondary, custom_id="request_annuaire_update")
     async def request_update_button(self, interaction: discord.Interaction, button: Button):
