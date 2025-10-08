@@ -1,38 +1,35 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal
-from discord import TextInput # Correction de l'ImportError
+from discord import TextInput
 import json
 from datetime import datetime
-
 import os
 
-# --- DÉFINITION DU BOT (DOIT ÊTRE FAITE AVANT TOUTE COMMANDE) ---
+# --- DÉFINITION DU BOT ---
 
 # 1. Récupération du jeton
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
-# 2. Définition des Intents
+# 2. Définition des Intents et activation du contenu de message
 intents = discord.Intents.default()
-# Décommentez la ligne ci-dessous si vous lisez le contenu des messages :
 intents.message_content = True 
 
 # 3. Définition de l'instance du bot
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Fin de la partie corrigée ---
+# --- FIN DE L'INITIALISATION ---
 
-# ... (Après bot = commands.Bot(...))
 
-# Ajoutez cette fonction pour que le bot soit prêt et enregistre les vues
 ## Fonctions Utilitaires (Load/Save)
 
 def load_stocks():
-    # Votre nouveau code avec gestion du FileNotFoundError ici
+    """Charge les données de stock, ou initialise si le fichier n'existe pas."""
     try:
         with open("stocks.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
+        # Retourne la structure de données initiale
         return {
             "entrepot": {"petrole_non_raffine": 0},
             "total": {
@@ -46,6 +43,7 @@ def load_stocks():
 
 
 def save_stocks(data):
+    """Sauvegarde les données de stock."""
     with open("stocks.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
@@ -54,8 +52,9 @@ def save_stocks(data):
 @bot.event
 async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
-    # L'enregistrement de la vue se fait ici
+    # Enregistre la vue pour la persistance des boutons après redémarrage
     bot.add_view(StockView())
+
 
 # --- Embed principal ---
 def create_embed():
@@ -77,7 +76,7 @@ def create_embed():
 
     total_text = (
         f"• Pétrole non raffiné : **{total['petrole_non_raffine']}**\n"
-        f"• Gazole : **{total['gazole']}**\n"
+        ff"• Gazole : **{total['gazole']}**\n"
         f"• SP 95 : **{total['sp95']}**\n"
         f"• SP 98 : **{total['sp98']}**\n"
         f"• Kérosène : **{total['kerosene']}**"
@@ -94,7 +93,7 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # VOS CHAMPS DE TEXTE DOIVENT ÊTRE INDENTÉS ICI, DANS __init__
+        # Les champs de texte sont maintenant correctement définis et indentés dans __init__
         self.add_item(TextInput(
             label="Type de carburant",
             custom_id="type_carburant",
@@ -108,9 +107,10 @@ class StockModal(Modal):
             placeholder="ex : 100",
             style=discord.TextStyle.short
         ))
-        # FIN de l'indentation de __init__
+
 
     async def callback(self, interaction: discord.Interaction):
+        # Les enfants du modal sont accessibles via self.children
         carburant = self.children[0].value.lower().strip()
         try:
             quantite = int(self.children[1].value)
@@ -138,18 +138,19 @@ class StockModal(Modal):
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
+        # Les custom_id sont nécessaires pour la persistance (add_view dans on_ready)
 
     @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success, custom_id="add_stock")
     async def add_button(self, interaction: discord.Interaction, button: Button):
-        # ...
+        await interaction.response.send_modal(StockModal(action="add"))
 
     @discord.ui.button(label="Retirer", style=discord.ButtonStyle.danger, custom_id="remove_stock")
     async def remove_button(self, interaction: discord.Interaction, button: Button):
-        # ...
+        await interaction.response.send_modal(StockModal(action="remove"))
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        # ...
+        await interaction.response.edit_message(embed=create_embed(), view=self)
 
 
 # --- Commande Discord ---
