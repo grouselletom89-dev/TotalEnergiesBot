@@ -74,6 +74,7 @@ def create_embed():
         inline=False
     )
 
+    # CORRECTION DU SYNTAXERROR (f"..." au lieu de ff"...")
     total_text = (
         f"• Pétrole non raffiné : **{total['petrole_non_raffine']}**\n"
         f"• Gazole : **{total['gazole']}**\n"
@@ -93,7 +94,7 @@ class StockModal(Modal):
         super().__init__(title=f"{'Ajouter' if action == 'add' else 'Retirer'} du stock")
         self.action = action
 
-        # Les champs de texte sont maintenant correctement définis et indentés dans __init__
+        # CHAMPS DE TEXTE CORRECTEMENT INDENTÉS DANS __init__
         self.add_item(TextInput(
             label="Type de carburant",
             custom_id="type_carburant",
@@ -110,46 +111,63 @@ class StockModal(Modal):
 
 
     async def callback(self, interaction: discord.Interaction):
-        # Les enfants du modal sont accessibles via self.children
         carburant = self.children[0].value.lower().strip()
+        
         try:
             quantite = int(self.children[1].value)
         except ValueError:
             await interaction.response.send_message("⚠️ La quantité doit être un nombre entier.", ephemeral=True)
             return
+            
+        # BLOC DE GESTION DES DONNÉES ET DES ERREURS
+        try:
+            data = load_stocks()
+            total = data["total"]
 
-        data = load_stocks()
-        total = data["total"]
+            if carburant not in total:
+                await interaction.response.send_message("❌ Carburant invalide. Utilise : gazole, sp95, sp98, kerosene, petrole_non_raffine", ephemeral=True)
+                return
 
-        if carburant not in total:
-            await interaction.response.send_message("❌ Carburant invalide. Utilise : gazole, sp95, sp98, kerosene, petrole_non_raffine", ephemeral=True)
+            if self.action == "add":
+                total[carburant] += quantite
+            else:
+                total[carburant] = max(0, total[carburant] - quantite)
+
+            save_stocks(data)
+            await interaction.response.edit_message(embed=create_embed(), view=StockView())
+            
+        except Exception as e:
+            # Si une erreur interne se produit, empêche l'échec de l'interaction et le log
+            print(f"Erreur lors du traitement du stock: {e}") 
+            await interaction.response.send_message("💥 Une erreur interne est survenue. Vérifiez la console Railway.", ephemeral=True)
             return
-
-        if self.action == "add":
-            total[carburant] += quantite
-        else:
-            total[carburant] = max(0, total[carburant] - quantite)
-
-        save_stocks(data)
-        await interaction.response.edit_message(embed=create_embed(), view=StockView())
 
 
 # --- Vue avec les boutons ---
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
-        # Les custom_id sont nécessaires pour la persistance (add_view dans on_ready)
+        # Les custom_id sont définis directement dans les décorateurs de fonction
 
     @discord.ui.button(label="Ajouter", style=discord.ButtonStyle.success, custom_id="add_stock")
     async def add_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(StockModal(action="add"))
+        try:
+            await interaction.response.send_modal(StockModal(action="add"))
+        except Exception as e:
+            print(f"Erreur lors de l'envoi du Modal: {e}")
+            await interaction.response.send_message("💥 Impossible d'ouvrir le formulaire.", ephemeral=True)
 
     @discord.ui.button(label="Retirer", style=discord.ButtonStyle.danger, custom_id="remove_stock")
     async def remove_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(StockModal(action="remove"))
+        try:
+            await interaction.response.send_modal(StockModal(action="remove"))
+        except Exception as e:
+            print(f"Erreur lors de l'envoi du Modal: {e}")
+            await interaction.response.send_message("💥 Impossible d'ouvrir le formulaire.", ephemeral=True)
 
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
+        # Le rafraîchissement ne devrait jamais échouer
         await interaction.response.edit_message(embed=create_embed(), view=self)
 
 
