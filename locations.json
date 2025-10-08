@@ -1,0 +1,71 @@
+{
+    "stations": {
+        "Station de Lampaul": {
+            "last_updated": "N/A",
+            "pumps": {
+                "Pompe 1": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                },
+                "Pompe 2": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                },
+                "Pompe 3": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                }
+            }
+        },
+        "Station de Ligoudou": {
+            "last_updated": "N/A",
+            "pumps": {
+                "Pompe 1": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                },
+                "Pompe 2": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                }
+            }
+        }
+    },
+    "ports": {
+        "Port de Lampaul": {
+            "last_updated": "N/A",
+            "pumps": {
+                "Pompe 1": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                }
+            }
+        },
+        "Port de Ligoudou": {
+            "last_updated": "N/A",
+            "pumps": {
+                "Pompe 1": {
+                    "gazole": 0,
+                    "sp95": 0,
+                    "sp98": 0
+                }
+            }
+        }
+    },
+    "aeroport": {
+        "Aéroport": {
+            "last_updated": "N/A",
+            "pumps": {
+                "Pompe 1": {
+                    "kerosene": 0
+                }
+            }
+        }
+    }
+}
