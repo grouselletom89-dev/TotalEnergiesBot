@@ -78,13 +78,38 @@ class FuelSelectView(View):
             carburant = interaction.data["values"][0]
             if carburant != "disabled": await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
         self.fuel_select.callback = select_callback; self.add_item(self.fuel_select)
+
+# --- MODIFIÉ : Saute le choix du carburant si un seul est disponible ---
 class CategorySelectView(View):
-    def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
-    async def show_fuel_select(self, i: discord.Interaction, cat: str): await i.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, cat))
+    def __init__(self, original_message_id: int): 
+        super().__init__(timeout=180)
+        self.original_message_id = original_message_id
+
+    async def show_fuel_select(self, interaction: discord.Interaction, category: str):
+        data = load_stocks()
+        fuels = list(data.get(category, {}).keys())
+
+        # S'il n'y a qu'un seul carburant, on ouvre directement le formulaire
+        if len(fuels) == 1:
+            fuel_name = fuels[0]
+            await interaction.response.send_modal(
+                StockModal(category=category, carburant=fuel_name, original_message_id=self.original_message_id)
+            )
+        # Sinon, on affiche la liste des carburants
+        else:
+            await interaction.response.edit_message(
+                content="Choisis le carburant :", 
+                view=FuelSelectView(self.original_message_id, category)
+            )
+
     @discord.ui.button(label="📦 Entrepôt", style=discord.ButtonStyle.secondary)
-    async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
+    async def entrepot_button(self, i: discord.Interaction, b: Button): 
+        await self.show_fuel_select(i, "entrepot")
+
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
-    async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
+    async def total_button(self, i: discord.Interaction, b: Button): 
+        await self.show_fuel_select(i, "total")
+
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -146,23 +171,18 @@ class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
         super().__init__(title=f"{pump_name} - {location_name}"); self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
         fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
-        for fuel, qty in fuels.items():
-            self.add_item(TextInput(label=f"Nouvelle Quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
+        for fuel, qty in fuels.items(): self.add_item(TextInput(label=f"Nouvelle Quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True); data = load_locations(); pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
         for field in self.children:
             try: pump_data[field.custom_id] = int(field.value)
-            except ValueError:
-                # --- MODIFIÉ : Texte d'erreur ---
-                await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
+            except ValueError: await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
         data[self.category_key][self.location_name]["last_updated"] = get_paris_time(); save_locations(data)
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embeds=create_locations_embeds())
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
-        except (discord.NotFound, discord.Forbidden):
-             # --- MODIFIÉ : Texte d'erreur ---
-            await interaction.followup.send("⚠️ Pompe mise à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
@@ -191,7 +211,9 @@ class LocationSelectView(View):
             if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
             await interaction.response.edit_message(content="Choisis une pompe :", view=pump_view, embed=embed)
 class LocationCategorySelectView(View):
-    def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
+    def __init__(self, original_message_id: int): 
+        super().__init__(timeout=180)
+        self.original_message_id = original_message_id
     async def show_location_select(self, interaction: discord.Interaction, category_key: str):
         locations = load_locations().get(category_key, {})
         if len(locations) == 1:
