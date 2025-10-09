@@ -19,6 +19,8 @@ REPORT_CHANNEL_ID = 1420794939565936743
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
 ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
+# --- NOUVEAU : ID du salon d'annonces ---
+ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -129,11 +131,7 @@ def load_locations():
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 def get_default_locations():
-    default_data = {
-        "stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
-        "ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0}}}},
-        "aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}
-    }
+    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
     save_locations(default_data); return default_data
 def create_locations_embeds():
     data = load_locations()
@@ -399,6 +397,7 @@ async def absence(ctx):
         color=discord.Color.dark_grey()
     )
     await ctx.send(embed=embed, view=AbsenceView())
+
 
 # =================================================================================
 # SECTION 5 : LOGIQUE POUR LA COMMANDE !RADIO
