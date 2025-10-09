@@ -17,6 +17,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- CONFIGURATION ---
 REPORT_CHANNEL_ID = 1420794939565936743
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
+ABSENCE_CHANNEL_ID = 1420794939565936744
+
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -61,7 +63,7 @@ class StockModal(Modal):
         except ValueError: await interaction.followup.send("⚠️ La quantité doit être un nombre.", ephemeral=True); return
         data=load_stocks()
         if self.category in data and self.carburant in data[self.category]: data[self.category][self.carburant] = quantite; save_stocks(data)
-        else: await interaction.followup.send("❌ Erreur, catégorie ou carburant introuvable.", ephemeral=True); return
+        else: await interaction.followup.send("❌ Erreur, catégorie/carburant introuvable.", ephemeral=True); return
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_stocks_embed())
@@ -78,38 +80,21 @@ class FuelSelectView(View):
             carburant = interaction.data["values"][0]
             if carburant != "disabled": await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
         self.fuel_select.callback = select_callback; self.add_item(self.fuel_select)
-
-# --- MODIFIÉ : Saute le choix du carburant si un seul est disponible ---
 class CategorySelectView(View):
     def __init__(self, original_message_id: int): 
         super().__init__(timeout=180)
         self.original_message_id = original_message_id
-
     async def show_fuel_select(self, interaction: discord.Interaction, category: str):
-        data = load_stocks()
-        fuels = list(data.get(category, {}).keys())
-
-        # S'il n'y a qu'un seul carburant, on ouvre directement le formulaire
+        data = load_stocks(); fuels = list(data.get(category, {}).keys())
         if len(fuels) == 1:
             fuel_name = fuels[0]
-            await interaction.response.send_modal(
-                StockModal(category=category, carburant=fuel_name, original_message_id=self.original_message_id)
-            )
-        # Sinon, on affiche la liste des carburants
+            await interaction.response.send_modal(StockModal(category=category, carburant=fuel_name, original_message_id=self.original_message_id))
         else:
-            await interaction.response.edit_message(
-                content="Choisis le carburant :", 
-                view=FuelSelectView(self.original_message_id, category)
-            )
-
+            await interaction.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, category))
     @discord.ui.button(label="📦 Entrepôt", style=discord.ButtonStyle.secondary)
-    async def entrepot_button(self, i: discord.Interaction, b: Button): 
-        await self.show_fuel_select(i, "entrepot")
-
+    async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
-    async def total_button(self, i: discord.Interaction, b: Button): 
-        await self.show_fuel_select(i, "total")
-
+    async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -211,9 +196,7 @@ class LocationSelectView(View):
             if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
             await interaction.response.edit_message(content="Choisis une pompe :", view=pump_view, embed=embed)
 class LocationCategorySelectView(View):
-    def __init__(self, original_message_id: int): 
-        super().__init__(timeout=180)
-        self.original_message_id = original_message_id
+    def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
     async def show_location_select(self, interaction: discord.Interaction, category_key: str):
         locations = load_locations().get(category_key, {})
         if len(locations) == 1:
@@ -350,12 +333,62 @@ async def annuaire(ctx): await ctx.send(embed=await create_annuaire_embed(ctx.gu
 # =================================================================================
 # SECTION 4 : GESTION GÉNÉRALE DU BOT
 # =================================================================================
+# --- NOUVEAU : La section pour la commande !absence ---
+class AbsenceModal(Modal, title="Déclarer une absence"):
+    date_debut = TextInput(label="🗓️ Date de début", placeholder="Ex: 10/10/2025")
+    date_fin = TextInput(label="🗓️ Date de fin", placeholder="Ex: 12/10/2025")
+    motif = TextInput(label="📝 Motif", style=discord.TextStyle.paragraph, placeholder="Raison de votre absence...", max_length=1000)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Récupère le salon d'absence
+        absence_channel = bot.get_channel(ABSENCE_CHANNEL_ID)
+        if not absence_channel:
+            await interaction.response.send_message("❌ Erreur : Le salon des absences n'est pas configuré ou introuvable.", ephemeral=True)
+            return
+
+        # Crée un embed pour le message d'absence
+        embed = discord.Embed(
+            title=f"📋 Déclaration d'absence de {interaction.user.display_name}",
+            color=discord.Color.orange()
+        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.add_field(name="Date de début", value=self.date_debut.value, inline=True)
+        embed.add_field(name="Date de fin", value=self.date_fin.value, inline=True)
+        embed.add_field(name="Motif", value=self.motif.value, inline=False)
+        embed.set_footer(text=f"Déclaration faite le {get_paris_time()}")
+
+        try:
+            # Envoie le message dans le salon d'absences
+            await absence_channel.send(embed=embed)
+            # Confirme à l'utilisateur que c'est fait
+            await interaction.response.send_message("✅ Ton absence a bien été enregistrée.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Erreur : Je n'ai pas les permissions pour envoyer un message dans le salon des absences.", ephemeral=True)
+
+class AbsenceView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Déclarer une absence", style=discord.ButtonStyle.primary, custom_id="declare_absence")
+    async def declare_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(AbsenceModal())
+
+@bot.command(name="absence")
+async def absence(ctx):
+    embed = discord.Embed(
+        title="Gestion des Absences",
+        description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.",
+        color=discord.Color.dark_grey()
+    )
+    await ctx.send(embed=embed, view=AbsenceView())
+
 @bot.event
 async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
     bot.add_view(StockView())
     bot.add_view(LocationsView())
     bot.add_view(AnnuaireView())
+    bot.add_view(AbsenceView()) # Ajoute la persistance pour la vue d'absence
 
 # --- Lancement du bot ---
 if TOKEN:
