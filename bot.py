@@ -19,8 +19,7 @@ REPORT_CHANNEL_ID = 1420794939565936743
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
 ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
-# --- NOUVEAU : ID du salon d'annonces ---
-ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
+ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574 # Ajout de l'ID du salon d'annonces
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -411,8 +410,76 @@ async def radio(ctx):
     )
     await ctx.send(embed=embed)
 
+# --- NOUVEAU : SECTION 6 : LOGIQUE POUR LA COMMANDE !ANNONCE ---
 # =================================================================================
-# SECTION 6 : GESTION GÉNÉRALE DU BOT
+
+class AnnonceModal(Modal, title="Rédiger une annonce interne"):
+    titre = TextInput(label="Titre de l'annonce", style=discord.TextStyle.short, max_length=256, required=True)
+    paragraphe = TextInput(label="Contenu de l'annonce", style=discord.TextStyle.paragraph, max_length=2000, required=True)
+    conclusion = TextInput(label="Conclusion (optionnel)", style=discord.TextStyle.short, required=False)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        annonce_channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+        if not annonce_channel:
+            await interaction.response.send_message("❌ Erreur : Le salon des annonces est introuvable.", ephemeral=True)
+            return
+
+        user = interaction.user
+        role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
+        user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), "Role non défini")
+
+        embed = discord.Embed(
+            title=self.titre.value,
+            description=self.paragraphe.value,
+            color=discord.Color.blue()
+        )
+
+        if self.conclusion.value:
+            embed.add_field(name="\u200b", value=self.conclusion.value, inline=False)
+        
+        signature = f"Cordialement,\n**{user.display_name}**\n*{user_role_name}*"
+        embed.add_field(name="\u200b", value=signature, inline=False)
+        embed.set_footer(text=f"Annonce faite le {get_paris_time()}")
+        
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        
+        try:
+            await annonce_channel.send(embed=embed)
+            await interaction.response.send_message("✅ Votre annonce a été publiée avec succès !", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Erreur : Je n'ai pas les permissions pour envoyer un message dans le salon des annonces.", ephemeral=True)
+
+class AnnonceView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Rédiger une annonce", style=discord.ButtonStyle.primary, custom_id="make_announcement")
+    async def announce_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(AnnonceModal())
+
+@bot.command(name="annonce")
+@commands.has_any_role("Patron", "Co-Patron", "Chef d'équipe") # Sécurité : seuls ces rôles peuvent utiliser la commande
+async def annonce(ctx):
+    embed = discord.Embed(
+        title="Panneau des Annonces Internes",
+        description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.",
+        color=discord.Color.dark_blue()
+    )
+    await ctx.send(embed=embed, view=AnnonceView())
+
+# Gestionnaire d'erreur pour la commande !annonce
+@annonce.error
+async def annonce_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
+    else:
+        await ctx.send("❌ Une erreur est survenue lors de l'exécution de la commande.")
+        print(f"Erreur commande !annonce: {error}")
+
+
+# =================================================================================
+# SECTION 7 : GESTION GÉNÉRALE DU BOT
 # =================================================================================
 @bot.event
 async def on_ready():
@@ -421,6 +488,7 @@ async def on_ready():
     bot.add_view(LocationsView())
     bot.add_view(AnnuaireView())
     bot.add_view(AbsenceView())
+    bot.add_view(AnnonceView()) # Ajout de la nouvelle vue persistante
 
 # --- Lancement du bot ---
 if TOKEN:
