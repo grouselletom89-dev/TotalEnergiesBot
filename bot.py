@@ -33,111 +33,197 @@ def get_paris_time():
 # =================================================================================
 def load_stocks():
     try:
-        with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
-    except FileNotFoundError: return get_default_stocks()
+        with open(STOCKS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return get_default_stocks()
+
 def save_stocks(data):
-    with open(STOCKS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
+    with open(STOCKS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
 def get_default_stocks():
-    default_data = {"entrepot": {"petrole_non_raffine": 0}, "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}}
-    save_stocks(default_data); return default_data
+    default_data = {
+        "entrepot": {"petrole_non_raffine": 0},
+        "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}
+    }
+    save_stocks(default_data)
+    return default_data
+
 def create_stocks_embed():
     data = load_stocks()
     embed = discord.Embed(title="⛽ Suivi des stocks - TotalEnergies", color=0xFF7900)
-    embed.add_field(name="📦 Entrepôt", value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
+    embed.add_field(
+        name="📦 Entrepôt",
+        value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '),
+        inline=False
+    )
     total = data.get('total', {})
-    embed.add_field(name="📊 Total des produits finis", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
-    carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
+    embed.add_field(
+        name="📊 Total des produits finis",
+        value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '),
+        inline=False
+    )
+    carburants_text = (
+        f"Gazole: **{total.get('gazole', 0):,}** | "
+        f"SP95: **{total.get('sp95', 0):,}** | "
+        f"SP98: **{total.get('sp98', 0):,}** | "
+        f"Kérosène: **{total.get('kerosene', 0):,}**"
+    ).replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
     embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
+
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
-        self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
+        self.category = category
+        self.carburant = carburant
+        self.original_message_id = original_message_id
         super().__init__(title=f"Mettre à jour : {carburant.replace('_', ' ').title()}")
+
     nouvelle_quantite = TextInput(label="Nouvelle quantité totale", placeholder="Ex: 5000")
+
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        try: quantite = int(self.nouvelle_quantite.value)
-        except ValueError: await interaction.followup.send("⚠️ La quantité doit être un nombre.", ephemeral=True); return
-        data=load_stocks()
-        if self.category in data and self.carburant in data[self.category]: data[self.category][self.carburant] = quantite; save_stocks(data)
-        else: await interaction.followup.send("❌ Erreur, catégorie/carburant introuvable.", ephemeral=True); return
+        try:
+            quantite = int(self.nouvelle_quantite.value)
+        except ValueError:
+            await interaction.followup.send("⚠️ La quantité doit être un nombre.", ephemeral=True)
+            return
+
+        data = load_stocks()
+        if self.category in data and self.carburant in data[self.category]:
+            data[self.category][self.carburant] = quantite
+            save_stocks(data)
+        else:
+            await interaction.followup.send("❌ Erreur, catégorie/carburant introuvable.", ephemeral=True)
+            return
+
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
-            if msg: await msg.edit(embed=create_stocks_embed())
+            if msg:
+                await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
-        except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
-        super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category
-        data = load_stocks(); fuels = list(data.get(self.category, {}).keys()); options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]; 
-        is_disabled = not bool(options)
-        if not options: options = [SelectOption(label="Aucun carburant ici", value="disabled")]
-        self.fuel_select = Select(placeholder="Choisis le carburant...", options=options, disabled=is_disabled)
-        async def select_callback(interaction: discord.Interaction):
-            carburant = interaction.data["values"][0]
-            if carburant != "disabled": await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
-        self.fuel_select.callback = select_callback; self.add_item(self.fuel_select)
-class CategorySelectView(View):
-    def __init__(self, original_message_id: int): 
         super().__init__(timeout=180)
         self.original_message_id = original_message_id
+        self.category = category
+        data = load_stocks()
+        fuels = list(data.get(self.category, {}).keys())
+        options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]
+        is_disabled = not bool(options)
+        if not options:
+            options = [SelectOption(label="Aucun carburant ici", value="disabled")]
+        self.fuel_select = Select(placeholder="Choisis le carburant...", options=options, disabled=is_disabled)
+
+        async def select_callback(interaction: discord.Interaction):
+            carburant = interaction.data["values"][0]
+            if carburant != "disabled":
+                await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
+
+        self.fuel_select.callback = select_callback
+        self.add_item(self.fuel_select)
+
+class CategorySelectView(View):
+    def __init__(self, original_message_id: int):
+        super().__init__(timeout=180)
+        self.original_message_id = original_message_id
+
     async def show_fuel_select(self, interaction: discord.Interaction, category: str):
-        data = load_stocks(); fuels = list(data.get(category, {}).keys())
+        data = load_stocks()
+        fuels = list(data.get(category, {}).keys())
         if len(fuels) == 1:
             fuel_name = fuels[0]
             await interaction.response.send_modal(StockModal(category=category, carburant=fuel_name, original_message_id=self.original_message_id))
         else:
             await interaction.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, category))
+
     @discord.ui.button(label="📦 Entrepôt", style=discord.ButtonStyle.secondary)
-    async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
+    async def entrepot_button(self, i: discord.Interaction, b: Button):
+        await self.show_fuel_select(i, "entrepot")
+
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
-    async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
+    async def total_button(self, i: discord.Interaction, b: Button):
+        await self.show_fuel_select(i, "total")
+
 class ResetConfirmationView(View):
-    def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
+    def __init__(self, original_message_id: int):
+        super().__init__(timeout=60)
+        self.original_message_id = original_message_id
+
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
     async def confirm_button(self, i: discord.Interaction, b: Button):
         save_stocks(get_default_stocks())
-        try: 
+        try:
             msg = await i.channel.fetch_message(self.original_message_id)
-            if msg: await msg.edit(embed=create_stocks_embed())
-        except (discord.NotFound, discord.Forbidden): pass
+            if msg:
+                await msg.edit(embed=create_stocks_embed())
+        except (discord.NotFound, discord.Forbidden):
+            pass
         await i.response.edit_message(content="✅ Stocks remis à zéro.", view=None)
+
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
-    async def cancel_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(content="Opération annulée.", view=None)
+    async def cancel_button(self, i: discord.Interaction, b: Button):
+        await i.response.edit_message(content="Opération annulée.", view=None)
+
 class StockView(View):
-    def __init__(self): super().__init__(timeout=None)
+    def __init__(self):
+        super().__init__(timeout=None)
+
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
-    async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="Catégorie à modifier ?", view=CategorySelectView(original_message_id=i.message.id), ephemeral=True)
+    async def update_button(self, i: discord.Interaction, b: Button):
+        await i.response.send_message(content="Catégorie à modifier ?", view=CategorySelectView(original_message_id=i.message.id), ephemeral=True)
+
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
-    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embed=create_stocks_embed(), view=self)
+    async def refresh_button(self, i: discord.Interaction, b: Button):
+        await i.response.edit_message(embed=create_stocks_embed(), view=self)
+
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
-    async def reset_button(self, i: discord.Interaction, b: Button): await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
+    async def reset_button(self, i: discord.Interaction, b: Button):
+        await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
+
 @bot.command(name="stocks")
-async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
+async def stocks(ctx):
+    await ctx.send(embed=create_stocks_embed(), view=StockView())
 
 # =================================================================================
 # SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
 # =================================================================================
 def load_locations():
     try:
-        with open(LOCATIONS_PATH, "r", encoding="utf-8") as f: return json.load(f)
-    except FileNotFoundError: return get_default_locations()
-def save_locations(data):
-    with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
-def get_default_locations():
-    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
-    save_locations(default_data); return default_data
+        with open(LOCATIONS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return get_default_locations()
 
-# ======= VERSION MODIFIÉE AVEC QUANTITÉS MANQUANTES =======
+def save_locations(data):
+    with open(LOCATIONS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+def get_default_locations():
+    default_data = {
+        "stations": {
+            "Station de Lampaul": {"image_url": "", "last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}},
+            "Station de Ligoudou": {"image_url": "", "last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}
+        },
+        "ports": {"Port de Lampaul": {"image_url": "", "last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0}}}},
+        "aeroport": {"Aéroport": {"image_url": "", "last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}
+    }
+    save_locations(default_data)
+    return default_data
+
 def create_locations_embeds():
     data = load_locations()
     embeds = []
     categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
 
-    # Capacités maximales
     MAX_CAPACITY = {"gazole": 3000, "sp95": 2000, "sp98": 2000, "kerosene": 10000}
+    global_missing = {"gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}
 
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
@@ -155,28 +241,43 @@ def create_locations_embeds():
                 for fuel, qty in pump_fuels.items():
                     max_cap = MAX_CAPACITY.get(fuel.lower(), 0)
                     missing = max_cap - qty if max_cap else 0
-                    if missing < 0: missing = 0
-                    total_missing[fuel] = total_missing.get(fuel, 0) + missing
+                    if missing < 0:
+                        missing = 0
+                    total_missing[fuel] += missing
+                    global_missing[fuel] += missing
                     pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L** *(manque {missing:,}L)*\n".replace(',', ' ')
                 pump_text += "\n"
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
             cat_embed.add_field(name=loc_name, value=pump_text, inline=True)
             if loc_data.get("image_url") and not image_set:
-                cat_embed.set_image(url=loc_data.get("image_url")); image_set = True
+                cat_embed.set_image(url=loc_data.get("image_url"))
+                image_set = True
 
-        # Bloc total manquant
         total_text = ""
         for fuel, missing in total_missing.items():
             if missing > 0:
                 total_text += f"➡️ {fuel.capitalize()}: **{missing:,}L manquants**\n".replace(',', ' ')
         if not total_text:
             total_text = "✅ Tous les réservoirs sont pleins."
-
         cat_embed.add_field(name="📉 Manquant total", value=total_text, inline=False)
-        if len(locations) % 2 != 0:
-            cat_embed.add_field(name="\u200b", value="\u200b", inline=True)
         embeds.append(cat_embed)
+
+    global_text = ""
+    for fuel, missing in global_missing.items():
+        if missing > 0:
+            global_text += f"➡️ {fuel.capitalize()}: **{missing:,}L manquants**\n".replace(',', ' ')
+    if not global_text:
+        global_text = "✅ Tous les réservoirs sont pleins dans toutes les zones."
+
+    global_embed = discord.Embed(
+        title="📊 Bilan global des manquants",
+        description=global_text,
+        color=0xFFAA00
+    )
+    global_embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
+    embeds.append(global_embed)
     return embeds
+
 # ===========================================================
 
 class LocationUpdateModal(Modal):
