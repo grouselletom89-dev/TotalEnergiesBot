@@ -97,7 +97,7 @@ class StockModal(Modal):
             data[self.category][self.carburant] = quantite
             save_stocks(data)
         else:
-            await interaction.followup.send("❌ Erreur, catégorie/carburant introuvable.", ephemeral=True)
+            await interaction.followup.send("❌ Erreur, catégorie ou carburant introuvable.", ephemeral=True)
             return
 
         try:
@@ -113,12 +113,15 @@ class FuelSelectView(View):
         super().__init__(timeout=180)
         self.original_message_id = original_message_id
         self.category = category
+
         data = load_stocks()
         fuels = list(data.get(self.category, {}).keys())
         options = [SelectOption(label=f.replace("_", " ").title(), value=f) for f in sorted(fuels)]
+        
         is_disabled = not bool(options)
         if not options:
             options = [SelectOption(label="Aucun carburant ici", value="disabled")]
+
         self.fuel_select = Select(placeholder="Choisis le carburant...", options=options, disabled=is_disabled)
 
         async def select_callback(interaction: discord.Interaction):
@@ -191,6 +194,7 @@ class StockView(View):
 async def stocks(ctx):
     await ctx.send(embed=create_stocks_embed(), view=StockView())
 
+
 # =================================================================================
 # SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
 # =================================================================================
@@ -223,7 +227,7 @@ def create_locations_embeds():
     categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
 
     MAX_CAPACITY = {"gazole": 3000, "sp95": 2000, "sp98": 2000, "kerosene": 10000}
-    global_missing = {"gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}
+    global_missing = {fuel: 0 for fuel in MAX_CAPACITY.keys()}
 
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
@@ -232,34 +236,39 @@ def create_locations_embeds():
 
         cat_embed = discord.Embed(title=f"**{cat_name}**", color=0x0099ff)
         image_set = False
-        total_missing = {"gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}
+        total_missing_in_cat = {fuel: 0 for fuel in MAX_CAPACITY.keys()}
 
         for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
                 pump_text += f"🔧 **{pump_name.upper()}**\n"
                 for fuel, qty in pump_fuels.items():
-                    max_cap = MAX_CAPACITY.get(fuel.lower(), 0)
-                    missing = max_cap - qty if max_cap else 0
-                    if missing < 0:
-                        missing = 0
-                    total_missing[fuel] += missing
+                    max_cap = MAX_CAPACITY.get(fuel, 0)
+                    missing = max(0, max_cap - qty)
+                    
+                    total_missing_in_cat[fuel] += missing
                     global_missing[fuel] += missing
+                    
                     pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L** *(manque {missing:,}L)*\n".replace(',', ' ')
                 pump_text += "\n"
+            
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
             cat_embed.add_field(name=loc_name, value=pump_text, inline=True)
             if loc_data.get("image_url") and not image_set:
                 cat_embed.set_image(url=loc_data.get("image_url"))
                 image_set = True
+        
+        if len(locations) % 2 != 0:
+            cat_embed.add_field(name="\u200b", value="\u200b", inline=True)
 
         total_text = ""
-        for fuel, missing in total_missing.items():
+        for fuel, missing in total_missing_in_cat.items():
             if missing > 0:
                 total_text += f"➡️ {fuel.capitalize()}: **{missing:,}L manquants**\n".replace(',', ' ')
         if not total_text:
-            total_text = "✅ Tous les réservoirs sont pleins."
-        cat_embed.add_field(name="📉 Manquant total", value=total_text, inline=False)
+            total_text = "✅ Tous les réservoirs de cette catégorie sont pleins."
+        cat_embed.add_field(name="📉 Manquant total pour la catégorie", value=total_text, inline=False)
+        
         embeds.append(cat_embed)
 
     global_text = ""
@@ -276,80 +285,128 @@ def create_locations_embeds():
     )
     global_embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embeds.append(global_embed)
+    
     return embeds
-
-# ===========================================================
 
 class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
-        super().__init__(title=f"{pump_name} - {location_name}"); self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
+        super().__init__(title=f"{pump_name} - {location_name}")
+        self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
         fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
-        for fuel, qty in fuels.items(): self.add_item(TextInput(label=f"Nouvelle Quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
+        for fuel, qty in fuels.items():
+            self.add_item(TextInput(label=f"Nouvelle Quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
+
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True); data = load_locations(); pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
+        await interaction.response.defer(ephemeral=True)
+        data = load_locations()
+        pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
         for field in self.children:
-            try: pump_data[field.custom_id] = int(field.value)
-            except ValueError: await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True); return
-        data[self.category_key][self.location_name]["last_updated"] = get_paris_time(); save_locations(data)
+            try:
+                pump_data[field.custom_id] = int(field.value)
+            except ValueError:
+                await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True)
+                return
+        
+        data[self.category_key][self.location_name]["last_updated"] = get_paris_time()
+        save_locations(data)
+        
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
-            if msg: await msg.edit(embeds=create_locations_embeds())
+            if msg:
+                await msg.edit(embeds=create_locations_embeds())
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
-        except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("⚠️ Pompe mise à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+
 class PumpSelectView(View):
     def __init__(self, category_key: str, location_name: str, original_message_id: int):
-        super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
-        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p) for p in pumps]
+        super().__init__(timeout=180)
+        self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
+        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys())
+        options = [SelectOption(label=p) for p in pumps]
         self.children[0].options = options if pumps else [SelectOption(label="Aucune pompe trouvée", value="disabled")]
+
     @discord.ui.select(placeholder="Choisis une pompe...", custom_id="locations_pump_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
-        if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
+        if pump_name != "disabled":
+            await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
+
 class LocationSelectView(View):
     def __init__(self, category_key: str, original_message_id: int):
-        super().__init__(timeout=180); self.category_key, self.original_message_id = category_key, original_message_id
-        locations = list(load_locations().get(category_key, {}).keys()); options = [SelectOption(label=loc) for loc in locations]
+        super().__init__(timeout=180)
+        self.category_key, self.original_message_id = category_key, original_message_id
+        locations = list(load_locations().get(category_key, {}).keys())
+        options = [SelectOption(label=loc) for loc in locations]
         self.children[0].options = options if locations else [SelectOption(label="Aucun lieu trouvé", value="disabled")]
+
     @discord.ui.select(placeholder="Choisis un lieu...", custom_id="locations_loc_selector")
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         loc_name = select.values[0]
-        if loc_name == "disabled": await interaction.response.edit_message(content="Action annulée.", view=None); return
-        location_data = load_locations().get(self.category_key, {}).get(loc_name, {}); pumps = location_data.get("pumps", {})
+        if loc_name == "disabled":
+            await interaction.response.edit_message(content="Action annulée.", view=None)
+            return
+
+        location_data = load_locations().get(self.category_key, {}).get(loc_name, {})
+        pumps = location_data.get("pumps", {})
         if len(pumps) == 1:
             pump_name = list(pumps.keys())[0]
             await interaction.response.send_modal(LocationUpdateModal(self.category_key, loc_name, pump_name, self.original_message_id))
         else:
             pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id)
-            image_url = location_data.get("image_url"); embed = None
-            if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
+            image_url = location_data.get("image_url")
+            embed = None
+            if image_url:
+                embed = discord.Embed(color=0x0099ff)
+                embed.set_image(url=image_url)
             await interaction.response.edit_message(content="Choisis une pompe :", view=pump_view, embed=embed)
+
 class LocationCategorySelectView(View):
-    def __init__(self, original_message_id: int): super().__init__(timeout=180); self.original_message_id = original_message_id
+    def __init__(self, original_message_id: int):
+        super().__init__(timeout=180)
+        self.original_message_id = original_message_id
+
     async def show_location_select(self, interaction: discord.Interaction, category_key: str):
         locations = load_locations().get(category_key, {})
         if len(locations) == 1:
-            location_name = list(locations.keys())[0]; location_data = locations[location_name]; pumps = location_data.get("pumps", {})
+            location_name = list(locations.keys())[0]
+            location_data = locations[location_name]
+            pumps = location_data.get("pumps", {})
             if len(pumps) == 1:
                 pump_name = list(pumps.keys())[0]
                 await interaction.response.send_modal(LocationUpdateModal(category_key, location_name, pump_name, self.original_message_id))
             else:
-                 await interaction.response.edit_message(content=f"Choisis une pompe pour **{location_name}** :", view=PumpSelectView(category_key, location_name, self.original_message_id))
+                await interaction.response.edit_message(content=f"Choisis une pompe pour **{location_name}** :", view=PumpSelectView(category_key, location_name, self.original_message_id))
         else:
             await interaction.response.edit_message(content="Choisis un lieu :", view=LocationSelectView(category_key, self.original_message_id))
+
     @discord.ui.button(label="Stations", style=discord.ButtonStyle.secondary)
-    async def stations_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "stations")
+    async def stations_button(self, i: discord.Interaction, b: Button):
+        await self.show_location_select(i, "stations")
+
     @discord.ui.button(label="Ports", style=discord.ButtonStyle.secondary)
-    async def ports_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "ports")
+    async def ports_button(self, i: discord.Interaction, b: Button):
+        await self.show_location_select(i, "ports")
+
     @discord.ui.button(label="Aéroport", style=discord.ButtonStyle.secondary)
-    async def aeroport_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "aeroport")
+    async def aeroport_button(self, i: discord.Interaction, b: Button):
+        await self.show_location_select(i, "aeroport")
+
 class LocationsView(View):
-    def __init__(self): super().__init__(timeout=None)
+    def __init__(self):
+        super().__init__(timeout=None)
+
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.primary, custom_id="update_location")
-    async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
+    async def update_button(self, i: discord.Interaction, b: Button):
+        await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
+
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
-    async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embeds=create_locations_embeds(), view=self)
+    async def refresh_button(self, i: discord.Interaction, b: Button):
+        await i.response.edit_message(embeds=create_locations_embeds(), view=self)
+
 @bot.command(name="stations")
-async def stations(ctx): await ctx.send(embeds=create_locations_embeds(), view=LocationsView())
+async def stations(ctx):
+    await ctx.send(embeds=create_locations_embeds(), view=LocationsView())
 
 
 # =================================================================================
@@ -468,17 +525,12 @@ class AbsenceModal(Modal, title="Déclarer une absence"):
     motif = TextInput(label="📝 Motif", style=discord.TextStyle.paragraph, placeholder="Raison de votre absence...", max_length=1000)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Récupère le salon d'absence
         absence_channel = bot.get_channel(ABSENCE_CHANNEL_ID)
         if not absence_channel:
             await interaction.response.send_message("❌ Erreur : Le salon des absences n'est pas configuré ou introuvable.", ephemeral=True)
             return
 
-        # Crée un embed pour le message d'absence
-        embed = discord.Embed(
-            title=f"📋 Déclaration d'absence de {interaction.user.display_name}",
-            color=discord.Color.orange()
-        )
+        embed = discord.Embed(title=f"📋 Déclaration d'absence de {interaction.user.display_name}", color=discord.Color.orange())
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.add_field(name="Date de début", value=self.date_debut.value, inline=True)
         embed.add_field(name="Date de fin", value=self.date_fin.value, inline=True)
@@ -486,9 +538,7 @@ class AbsenceModal(Modal, title="Déclarer une absence"):
         embed.set_footer(text=f"Déclaration faite le {get_paris_time()}")
 
         try:
-            # Envoie le message dans le salon d'absences
             await absence_channel.send(embed=embed)
-            # Confirme à l'utilisateur que c'est fait
             await interaction.response.send_message("✅ Ton absence a bien été enregistrée.", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("❌ Erreur : Je n'ai pas les permissions pour envoyer un message dans le salon des absences.", ephemeral=True)
@@ -516,7 +566,7 @@ async def on_ready():
     bot.add_view(StockView())
     bot.add_view(LocationsView())
     bot.add_view(AnnuaireView())
-    bot.add_view(AbsenceView()) # Ajoute la persistance pour la vue d'absence
+    bot.add_view(AbsenceView())
 
 # --- Lancement du bot ---
 if TOKEN:
