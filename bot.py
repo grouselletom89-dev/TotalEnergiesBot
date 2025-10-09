@@ -18,7 +18,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 REPORT_CHANNEL_ID = 1420794939565936743
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
 ABSENCE_CHANNEL_ID = 1420794939565936744
-RADIO_FREQUENCY = "367.6 Mhz" # Ajout de la fréquence radio
+RADIO_FREQUENCY = "367.6 Mhz"
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -357,9 +357,8 @@ async def annuaire(ctx): await ctx.send(embed=await create_annuaire_embed(ctx.gu
 
 
 # =================================================================================
-# SECTION 4 : GESTION GÉNÉRALE DU BOT
+# SECTION 4 : LOGIQUE POUR LA COMMANDE !ABSENCE
 # =================================================================================
-# --- NOUVEAU : La section pour la commande !absence ---
 class AbsenceModal(Modal, title="Déclarer une absence"):
     date_debut = TextInput(label="🗓️ Date de début", placeholder="Ex: 10/10/2025")
     date_fin = TextInput(label="🗓️ Date de fin", placeholder="Ex: 12/10/2025")
@@ -401,6 +400,21 @@ async def absence(ctx):
     )
     await ctx.send(embed=embed, view=AbsenceView())
 
+# =================================================================================
+# SECTION 5 : LOGIQUE POUR LA COMMANDE !RADIO
+# =================================================================================
+@bot.command(name="radio")
+async def radio(ctx):
+    embed = discord.Embed(
+        title=f"Notre fréquence est `{RADIO_FREQUENCY}`",
+        description="⚠️ Merci de la tenir secrète !",
+        color=discord.Color.dark_grey()
+    )
+    await ctx.send(embed=embed)
+
+# =================================================================================
+# SECTION 6 : GESTION GÉNÉRALE DU BOT
+# =================================================================================
 @bot.event
 async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
