@@ -167,6 +167,8 @@ class PumpSelectView(View):
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
         if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
+
+# --- MODIFIÉ : Vérifie aussi le nombre de pompes ---
 class LocationSelectView(View):
     def __init__(self, category_key: str, original_message_id: int):
         super().__init__(timeout=180); self.category_key, self.original_message_id = category_key, original_message_id
@@ -176,13 +178,24 @@ class LocationSelectView(View):
     async def select_callback(self, interaction: discord.Interaction, select: Select):
         loc_name = select.values[0]
         if loc_name == "disabled": await interaction.response.edit_message(content="Action annulée.", view=None); return
-        pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id)
-        data = load_locations(); image_url = data.get(self.category_key, {}).get(loc_name, {}).get("image_url")
-        embed = None
-        if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
-        await interaction.response.edit_message(content="Choisis une pompe :", view=pump_view, embed=embed)
 
-# --- MODIFIÉ : La logique pour sauter une étape ---
+        # On vérifie le nombre de pompes pour ce lieu
+        location_data = load_locations().get(self.category_key, {}).get(loc_name, {})
+        pumps = location_data.get("pumps", {})
+
+        if len(pumps) == 1:
+            # S'il n'y a qu'une pompe, on ouvre directement le formulaire
+            pump_name = list(pumps.keys())[0]
+            await interaction.response.send_modal(LocationUpdateModal(self.category_key, loc_name, pump_name, self.original_message_id))
+        else:
+            # Sinon, on affiche le menu de sélection de la pompe
+            pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id)
+            data = load_locations(); image_url = data.get(self.category_key, {}).get(loc_name, {}).get("image_url")
+            embed = None
+            if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
+            await interaction.response.edit_message(content="Choisis une pompe :", view=pump_view, embed=embed)
+
+# --- MODIFIÉ : Vérifie le nombre de lieux ET de pompes ---
 class LocationCategorySelectView(View):
     def __init__(self, original_message_id: int): 
         super().__init__(timeout=180)
@@ -191,14 +204,23 @@ class LocationCategorySelectView(View):
     async def show_location_select(self, interaction: discord.Interaction, category_key: str):
         locations = load_locations().get(category_key, {})
         
-        # S'il n'y a qu'un seul lieu, on saute directement au choix de la pompe
+        # Cas 1 : Un seul lieu dans la catégorie
         if len(locations) == 1:
             location_name = list(locations.keys())[0]
-            await interaction.response.edit_message(
-                content=f"Choisis une pompe pour **{location_name}** :",
-                view=PumpSelectView(category_key, location_name, self.original_message_id)
-            )
-        # Sinon, on affiche la liste des lieux
+            location_data = locations[location_name]
+            pumps = location_data.get("pumps", {})
+
+            # Cas 1a : Ce lieu n'a qu'une seule pompe -> on ouvre le formulaire directement
+            if len(pumps) == 1:
+                pump_name = list(pumps.keys())[0]
+                await interaction.response.send_modal(LocationUpdateModal(category_key, location_name, pump_name, self.original_message_id))
+            # Cas 1b : Ce lieu a plusieurs pompes -> on affiche le choix des pompes
+            else:
+                 await interaction.response.edit_message(
+                    content=f"Choisis une pompe pour **{location_name}** :",
+                    view=PumpSelectView(category_key, location_name, self.original_message_id)
+                )
+        # Cas 2 : Plusieurs lieux -> on affiche le choix des lieux
         else:
             await interaction.response.edit_message(
                 content="Choisis un lieu :", 
