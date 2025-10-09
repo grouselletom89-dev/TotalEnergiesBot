@@ -406,7 +406,7 @@ async def absence(ctx):
 @bot.command(name="radio")
 async def radio(ctx):
     embed = discord.Embed(
-        title=f"Notre fréquence est `{RADIO_FREQUENCY}`",
+        title=f"# Notre fréquence est `{RADIO_FREQUENCY}`",
         description="⚠️ Merci de la tenir secrète !",
         color=discord.Color.dark_grey()
     )
