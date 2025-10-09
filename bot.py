@@ -19,7 +19,6 @@ REPORT_CHANNEL_ID = 1420794939565936743
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
 ABSENCE_CHANNEL_ID = 1420794939565936744
 
-
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
@@ -118,7 +117,6 @@ class StockView(View):
 @bot.command(name="stocks")
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
 
-
 # =================================================================================
 # SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
 # =================================================================================
@@ -131,27 +129,56 @@ def save_locations(data):
 def get_default_locations():
     default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
     save_locations(default_data); return default_data
+
+# ======= VERSION MODIFIÉE AVEC QUANTITÉS MANQUANTES =======
 def create_locations_embeds():
     data = load_locations()
     embeds = []
     categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
+
+    # Capacités maximales
+    MAX_CAPACITY = {"gazole": 3000, "sp95": 2000, "sp98": 2000, "kerosene": 10000}
+
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
-        if not locations: continue
+        if not locations:
+            continue
+
         cat_embed = discord.Embed(title=f"**{cat_name}**", color=0x0099ff)
         image_set = False
+        total_missing = {"gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}
+
         for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
                 pump_text += f"🔧 **{pump_name.upper()}**\n"
-                for fuel, qty in pump_fuels.items(): pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L**\n".replace(',', ' ')
+                for fuel, qty in pump_fuels.items():
+                    max_cap = MAX_CAPACITY.get(fuel.lower(), 0)
+                    missing = max_cap - qty if max_cap else 0
+                    if missing < 0: missing = 0
+                    total_missing[fuel] = total_missing.get(fuel, 0) + missing
+                    pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L** *(manque {missing:,}L)*\n".replace(',', ' ')
+                pump_text += "\n"
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
             cat_embed.add_field(name=loc_name, value=pump_text, inline=True)
             if loc_data.get("image_url") and not image_set:
                 cat_embed.set_image(url=loc_data.get("image_url")); image_set = True
-        if len(locations) % 2 != 0: cat_embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+        # Bloc total manquant
+        total_text = ""
+        for fuel, missing in total_missing.items():
+            if missing > 0:
+                total_text += f"➡️ {fuel.capitalize()}: **{missing:,}L manquants**\n".replace(',', ' ')
+        if not total_text:
+            total_text = "✅ Tous les réservoirs sont pleins."
+
+        cat_embed.add_field(name="📉 Manquant total", value=total_text, inline=False)
+        if len(locations) % 2 != 0:
+            cat_embed.add_field(name="\u200b", value="\u200b", inline=True)
         embeds.append(cat_embed)
     return embeds
+# ===========================================================
+
 class LocationUpdateModal(Modal):
     def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
         super().__init__(title=f"{pump_name} - {location_name}"); self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
