@@ -34,7 +34,6 @@ def get_paris_time():
 # =================================================================================
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
 # =================================================================================
-
 def load_stocks():
     try:
         with open(STOCKS_PATH, "r", encoding="utf-8") as f:
@@ -60,7 +59,12 @@ def create_stocks_embed():
     embed.add_field(name="📦 Entrepôt", value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
     total = data.get('total', {})
     embed.add_field(name="📊 Total", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
-    carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
+    carburants_text = (
+        f"Gazole: **{total.get('gazole', 0):,}** | "
+        f"SP95: **{total.get('sp95', 0):,}** | "
+        f"SP98: **{total.get('sp98', 0):,}** | "
+        f"Kérosène: **{total.get('kerosene', 0):,}**"
+    ).replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
     embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
@@ -104,7 +108,9 @@ class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
         self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
         super().__init__(title=f"Mettre à jour : {carburant.replace('_', ' ').title()}")
+    
     nouvelle_quantite = TextInput(label="Nouvelle quantité totale", placeholder="Ex: 5000")
+
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -112,6 +118,7 @@ class StockModal(Modal):
         except ValueError:
             await interaction.followup.send("⚠️ La quantité doit être un nombre.", ephemeral=True)
             return
+        
         data=load_stocks()
         if self.category in data and self.carburant in data[self.category]:
             data[self.category][self.carburant] = quantite
@@ -119,6 +126,7 @@ class StockModal(Modal):
         else:
             await interaction.followup.send("❌ Erreur, catégorie ou carburant introuvable.", ephemeral=True)
             return
+            
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg:
@@ -128,7 +136,7 @@ class StockModal(Modal):
             await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
 
 class CategorySelectView(View):
-    def __init__(self, original_message_id: int): 
+    def __init__(self, original_message_id: int):
         super().__init__(timeout=180)
         self.original_message_id = original_message_id
 
@@ -144,6 +152,7 @@ class ResetConfirmationView(View):
     def __init__(self, original_message_id: int):
         super().__init__(timeout=60)
         self.original_message_id = original_message_id
+
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
     async def confirm_button(self, i: discord.Interaction, b: Button):
         save_stocks(get_default_stocks())
@@ -154,6 +163,7 @@ class ResetConfirmationView(View):
         except (discord.NotFound, discord.Forbidden):
             pass
         await i.response.edit_message(content="✅ Stocks remis à zéro.", view=None)
+
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, i: discord.Interaction, b: Button):
         await i.response.edit_message(content="Opération annulée.", view=None)
@@ -161,12 +171,15 @@ class ResetConfirmationView(View):
 class StockView(View):
     def __init__(self):
         super().__init__(timeout=None)
+
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.success, custom_id="update_stock")
     async def update_button(self, i: discord.Interaction, b: Button):
         await i.response.send_message(content="Catégorie à modifier ?", view=CategorySelectView(original_message_id=i.message.id), ephemeral=True)
+
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_stock")
     async def refresh_button(self, i: discord.Interaction, b: Button):
         await i.response.edit_message(embed=create_stocks_embed(), view=self)
+
     @discord.ui.button(label="Tout remettre à 0", style=discord.ButtonStyle.danger, custom_id="reset_all_stock")
     async def reset_button(self, i: discord.Interaction, b: Button):
         await i.response.send_message(content="**⚠️ Action irréversible. Confirmer ?**", view=ResetConfirmationView(original_message_id=i.message.id), ephemeral=True)
@@ -205,16 +218,12 @@ def create_locations_embeds():
     categories = {"stations": "🚉 Stations", "ports": "⚓ Ports", "aeroport": "✈️ Aéroport"}
     MAX_CAPACITY = {"gazole": 3000, "sp95": 2000, "sp98": 2000, "kerosene": 10000}
     global_missing = {fuel: 0 for fuel in MAX_CAPACITY.keys()}
-
     for cat_key, cat_name in categories.items():
         locations = data.get(cat_key)
-        if not locations:
-            continue
-
+        if not locations: continue
         cat_embed = discord.Embed(title=f"**{cat_name}**", color=0x0099ff)
         image_set = False
         total_missing_in_cat = {fuel: 0 for fuel in MAX_CAPACITY.keys()}
-
         for loc_name, loc_data in locations.items():
             pump_text = ""
             for pump_name, pump_fuels in loc_data.get("pumps", {}).items():
@@ -226,16 +235,13 @@ def create_locations_embeds():
                     global_missing[fuel] += missing
                     pump_text += f"⛽ {fuel.capitalize()}: **{qty:,}L** *(manque {missing:,}L)*\n".replace(',', ' ')
                 pump_text += "\n"
-            
             pump_text += f"🕒 *{loc_data.get('last_updated', 'N/A')}*\n\u200b\n"
             cat_embed.add_field(name=loc_name, value=pump_text, inline=True)
             if loc_data.get("image_url") and not image_set:
                 cat_embed.set_image(url=loc_data.get("image_url"))
                 image_set = True
-        
         if len(locations) % 2 != 0:
             cat_embed.add_field(name="\u200b", value="\u200b", inline=True)
-
         total_text = ""
         for fuel, missing in total_missing_in_cat.items():
             if missing > 0:
@@ -243,24 +249,16 @@ def create_locations_embeds():
         if not total_text:
             total_text = "✅ Tous les réservoirs de cette catégorie sont pleins."
         cat_embed.add_field(name="📉 Manquant total pour la catégorie", value=total_text, inline=False)
-        
         embeds.append(cat_embed)
-
     global_text = ""
     for fuel, missing in global_missing.items():
         if missing > 0:
             global_text += f"➡️ {fuel.capitalize()}: **{missing:,}L manquants**\n".replace(',', ' ')
     if not global_text:
         global_text = "✅ Tous les réservoirs sont pleins dans toutes les zones."
-
-    global_embed = discord.Embed(
-        title="📊 Bilan global des manquants",
-        description=global_text,
-        color=0xFFAA00
-    )
+    global_embed = discord.Embed(title="📊 Bilan global des manquants", description=global_text, color=0xFFAA00)
     global_embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embeds.append(global_embed)
-    
     return embeds
 
 class LocationUpdateModal(Modal):
@@ -281,10 +279,8 @@ class LocationUpdateModal(Modal):
             except ValueError:
                 await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id.upper()} doit être un nombre.", ephemeral=True)
                 return
-        
         data[self.category_key][self.location_name]["last_updated"] = get_paris_time()
         save_locations(data)
-        
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg:
@@ -571,6 +567,7 @@ async def annonce_error(ctx, error):
     else:
         await ctx.send("❌ Une erreur est survenue lors de l'exécution de la commande."); print(f"Erreur commande !annonce: {error}")
 
+
 # =================================================================================
 # SECTION 7 : LOGIQUE POUR LA COMMANDE !OPEN
 # =================================================================================
@@ -580,25 +577,19 @@ async def open_channel(ctx, member: discord.Member):
     category = discord.utils.get(ctx.guild.categories, id=PRIVATE_CHANNEL_CATEGORY_ID)
     if not category:
         await ctx.send("❌ Erreur : La catégorie pour les salons privés est introuvable."); return
-
     channel_name = f"📁・{member.name.lower()}"
     existing_channel = discord.utils.get(ctx.guild.text_channels, name=channel_name)
     if existing_channel:
         await ctx.send(f"⚠️ Un salon pour **{member.display_name}** existe déjà : {existing_channel.mention}"); return
-
-    # Récupère les rôles pour les permissions
     patron_role = discord.utils.get(ctx.guild.roles, name="Patron")
     co_patron_role = discord.utils.get(ctx.guild.roles, name="Co-Patron")
-
     overwrites = {
         ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
         member: discord.PermissionOverwrite(read_messages=True, send_messages=True, read_message_history=True),
         ctx.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
     }
-    # Ajoute les permissions pour les rôles s'ils existent
     if patron_role: overwrites[patron_role] = discord.PermissionOverwrite(read_messages=True)
     if co_patron_role: overwrites[co_patron_role] = discord.PermissionOverwrite(read_messages=True)
-    
     try:
         new_channel = await ctx.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
         await new_channel.send(f"Bonjour {member.mention}, ce salon a été créé pour vous.")
@@ -607,7 +598,6 @@ async def open_channel(ctx, member: discord.Member):
         await ctx.send("❌ Erreur : Je n'ai pas les permissions nécessaires pour créer un salon.")
     except Exception as e:
         await ctx.send(f"❌ Une erreur inattendue est survenue : {e}")
-
 @open_channel.error
 async def open_channel_error(ctx, error):
     if isinstance(error, commands.MissingAnyRole):
@@ -619,6 +609,7 @@ async def open_channel_error(ctx, error):
     else:
         print(f"Erreur commande !open: {error}")
         await ctx.send("❌ Une erreur est survenue.")
+
 
 # =================================================================================
 # SECTION 8 : GESTION GÉNÉRALE DU BOT
