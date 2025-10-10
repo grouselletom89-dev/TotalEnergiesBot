@@ -19,7 +19,7 @@ REPORT_CHANNEL_ID = 1420794939565936743
 ANNUAIRE_CHANNEL_ID = 1421268834446213251
 ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
-ANNOUNCEMENT_CHANNEL_ID = 1425965261483282602 # Ajout de l'ID du salon d'annonces
+ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -42,17 +42,64 @@ def save_stocks(data):
 def get_default_stocks():
     default_data = {"entrepot": {"petrole_non_raffine": 0}, "total": {"petrole_non_raffine": 0, "gazole": 0, "sp95": 0, "sp98": 0, "kerosene": 0}}
     save_stocks(default_data); return default_data
+
+# --- MODIFIÉ : Renommage du champ "Total des produits finis" en "Total" ---
 def create_stocks_embed():
     data = load_stocks()
     embed = discord.Embed(title="⛽ Suivi des stocks - TotalEnergies", color=0xFF7900)
     embed.add_field(name="📦 Entrepôt", value=f"Pétrole non raffiné : **{data.get('entrepot', {}).get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
     total = data.get('total', {})
-    embed.add_field(name="📊 Total des produits finis", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
+    embed.add_field(name="📊 Total", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False) # Renommé ici
     carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
     embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
+
+# --- NOUVEAU : Formulaire spécifique pour la catégorie "Total" ---
+class TotalStockModal(Modal, title="Mettre à jour le stock Total"):
+    def __init__(self, original_message_id: int):
+        super().__init__()
+        self.original_message_id = original_message_id
+        
+        # Charge les valeurs actuelles pour les pré-remplir
+        current_stocks = load_stocks().get("total", {})
+        
+        # Crée un champ pour chaque carburant
+        self.add_item(TextInput(label="Nouvelle quantité de Pétrole non raffiné", custom_id="petrole_non_raffine", default=str(current_stocks.get("petrole_non_raffine", 0))))
+        self.add_item(TextInput(label="Nouvelle quantité de Gazole", custom_id="gazole", default=str(current_stocks.get("gazole", 0))))
+        self.add_item(TextInput(label="Nouvelle quantité de SP95", custom_id="sp95", default=str(current_stocks.get("sp95", 0))))
+        self.add_item(TextInput(label="Nouvelle quantité de SP98", custom_id="sp98", default=str(current_stocks.get("sp98", 0))))
+        self.add_item(TextInput(label="Nouvelle quantité de Kérosène", custom_id="kerosene", default=str(current_stocks.get("kerosene", 0))))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        data = load_stocks()
+        total_stocks = data['total']
+
+        # Met à jour chaque valeur
+        for field in self.children:
+            try:
+                value = int(field.value)
+                if value < 0:
+                    await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id} ne peut pas être négative.", ephemeral=True)
+                    return
+                total_stocks[field.custom_id] = value
+            except ValueError:
+                await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id} doit être un nombre.", ephemeral=True)
+                return
+        
+        save_stocks(data)
+
+        # Met à jour le panneau principal
+        try:
+            msg = await interaction.channel.fetch_message(self.original_message_id)
+            if msg:
+                await msg.edit(embed=create_stocks_embed())
+            await interaction.followup.send("✅ Stock 'Total' mis à jour !", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
         self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
@@ -70,6 +117,7 @@ class StockModal(Modal):
             if msg: await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send(f"✅ Stock mis à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+
 class FuelSelectView(View):
     def __init__(self, original_message_id: int, category: str):
         super().__init__(timeout=180); self.original_message_id, self.category = original_message_id, category
@@ -81,21 +129,25 @@ class FuelSelectView(View):
             carburant = interaction.data["values"][0]
             if carburant != "disabled": await interaction.response.send_modal(StockModal(category=self.category, carburant=carburant, original_message_id=self.original_message_id))
         self.fuel_select.callback = select_callback; self.add_item(self.fuel_select)
+
+# --- MODIFIÉ : Logique du bouton "Total" ---
 class CategorySelectView(View):
     def __init__(self, original_message_id: int): 
         super().__init__(timeout=180)
         self.original_message_id = original_message_id
-    async def show_fuel_select(self, interaction: discord.Interaction, category: str):
-        data = load_stocks(); fuels = list(data.get(category, {}).keys())
-        if len(fuels) == 1:
-            fuel_name = fuels[0]
-            await interaction.response.send_modal(StockModal(category=category, carburant=fuel_name, original_message_id=self.original_message_id))
-        else:
-            await interaction.response.edit_message(content="Choisis le carburant :", view=FuelSelectView(self.original_message_id, category))
+
     @discord.ui.button(label="📦 Entrepôt", style=discord.ButtonStyle.secondary)
-    async def entrepot_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "entrepot")
+    async def entrepot_button(self, interaction: discord.Interaction, button: Button):
+        # L'entrepôt n'a qu'un seul produit, on ouvre directement le formulaire simple
+        await interaction.response.send_modal(
+            StockModal(category="entrepot", carburant="petrole_non_raffine", original_message_id=self.original_message_id)
+        )
+
     @discord.ui.button(label="📊 Total", style=discord.ButtonStyle.secondary)
-    async def total_button(self, i: discord.Interaction, b: Button): await self.show_fuel_select(i, "total")
+    async def total_button(self, interaction: discord.Interaction, button: Button):
+        # Pour "Total", on ouvre le nouveau formulaire complet
+        await interaction.response.send_modal(TotalStockModal(original_message_id=self.original_message_id))
+
 class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
@@ -130,7 +182,7 @@ def load_locations():
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 def get_default_locations():
-    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
+    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
     save_locations(default_data); return default_data
 def create_locations_embeds():
     data = load_locations()
@@ -360,41 +412,28 @@ class AbsenceModal(Modal, title="Déclarer une absence"):
     date_debut = TextInput(label="🗓️ Date de début", placeholder="Ex: 10/10/2025")
     date_fin = TextInput(label="🗓️ Date de fin", placeholder="Ex: 12/10/2025")
     motif = TextInput(label="📝 Motif", style=discord.TextStyle.paragraph, placeholder="Raison de votre absence...", max_length=1000)
-
     async def on_submit(self, interaction: discord.Interaction):
         absence_channel = bot.get_channel(ABSENCE_CHANNEL_ID)
         if not absence_channel:
-            await interaction.response.send_message("❌ Erreur : Le salon des absences n'est pas configuré ou introuvable.", ephemeral=True)
-            return
-
+            await interaction.response.send_message("❌ Erreur : Le salon des absences n'est pas configuré ou introuvable.", ephemeral=True); return
         embed = discord.Embed(title=f"📋 Déclaration d'absence de {interaction.user.display_name}", color=discord.Color.orange())
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.add_field(name="Date de début", value=self.date_debut.value, inline=True)
         embed.add_field(name="Date de fin", value=self.date_fin.value, inline=True)
         embed.add_field(name="Motif", value=self.motif.value, inline=False)
         embed.set_footer(text=f"Déclaration faite le {get_paris_time()}")
-
         try:
             await absence_channel.send(embed=embed)
             await interaction.response.send_message("✅ Ton absence a bien été enregistrée.", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("❌ Erreur : Je n'ai pas les permissions pour envoyer un message dans le salon des absences.", ephemeral=True)
-
 class AbsenceView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Déclarer une absence", style=discord.ButtonStyle.primary, custom_id="declare_absence")
-    async def declare_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(AbsenceModal())
-
+    async def declare_button(self, interaction: discord.Interaction, button: Button): await interaction.response.send_modal(AbsenceModal())
 @bot.command(name="absence")
 async def absence(ctx):
-    embed = discord.Embed(
-        title="Gestion des Absences",
-        description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.",
-        color=discord.Color.dark_grey()
-    )
+    embed = discord.Embed(title="Gestion des Absences", description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.", color=discord.Color.dark_grey())
     await ctx.send(embed=embed, view=AbsenceView())
 
 
@@ -403,84 +442,49 @@ async def absence(ctx):
 # =================================================================================
 @bot.command(name="radio")
 async def radio(ctx):
-    embed = discord.Embed(
-        title=f"Notre fréquence est `{RADIO_FREQUENCY}`",
-        description="⚠️ Merci de la tenir secrète !",
-        color=discord.Color.dark_grey()
-    )
+    embed = discord.Embed(title=f"Notre fréquence est `{RADIO_FREQUENCY}`", description="⚠️ Merci de la tenir secrète !", color=discord.Color.dark_grey())
     await ctx.send(embed=embed)
 
-# --- NOUVEAU : SECTION 6 : LOGIQUE POUR LA COMMANDE !ANNONCE ---
+
 # =================================================================================
-
-class AnnonceModal(Modal, title="Rédiger une annonce interne"):
-    titre = TextInput(label="Titre de l'annonce", style=discord.TextStyle.short, max_length=256, required=True)
-    paragraphe = TextInput(label="Contenu de l'annonce", style=discord.TextStyle.paragraph, max_length=2000, required=True)
-    conclusion = TextInput(label="Conclusion (optionnel)", style=discord.TextStyle.short, required=False)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        annonce_channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
-        if not annonce_channel:
-            await interaction.response.send_message("❌ Erreur : Le salon des annonces est introuvable.", ephemeral=True)
-            return
-
-        user = interaction.user
-        role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
-        user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), "Role non défini")
-
-        embed = discord.Embed(
-            title=self.titre.value,
-            description=self.paragraphe.value,
-            color=discord.Color.blue()
-        )
-
-        if self.conclusion.value:
-            embed.add_field(name="\u200b", value=self.conclusion.value, inline=False)
-        
-        signature = f"Cordialement,\n**{user.display_name}**\n*{user_role_name}*"
-        embed.add_field(name="\u200b", value=signature, inline=False)
-        embed.set_footer(text=f"Annonce faite le {get_paris_time()}")
-        
-        if interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
-        
-        try:
-            await annonce_channel.send(embed=embed)
-            await interaction.response.send_message("✅ Votre annonce a été publiée avec succès !", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.response.send_message("❌ Erreur : Je n'ai pas les permissions pour envoyer un message dans le salon des annonces.", ephemeral=True)
-
-class AnnonceView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Rédiger une annonce", style=discord.ButtonStyle.primary, custom_id="make_announcement")
-    async def announce_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(AnnonceModal())
-
+# SECTION 6 : GESTION GÉNÉRALE DU BOT
+# =================================================================================
 @bot.command(name="annonce")
-@commands.has_any_role("Patron", "Co-Patron", "Chef d'équipe") # Sécurité : seuls ces rôles peuvent utiliser la commande
+@commands.has_any_role("Patron", "Co-Patron", "Chef d'équipe")
 async def annonce(ctx):
-    embed = discord.Embed(
-        title="Panneau des Annonces Internes",
-        description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.",
-        color=discord.Color.dark_blue()
-    )
+    embed = discord.Embed(title="Panneau des Annonces Internes", description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.", color=discord.Color.dark_blue())
     await ctx.send(embed=embed, view=AnnonceView())
-
-# Gestionnaire d'erreur pour la commande !annonce
 @annonce.error
 async def annonce_error(ctx, error):
     if isinstance(error, commands.MissingAnyRole):
         await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
     else:
-        await ctx.send("❌ Une erreur est survenue lors de l'exécution de la commande.")
-        print(f"Erreur commande !annonce: {error}")
+        await ctx.send("❌ Une erreur est survenue lors de l'exécution de la commande."); print(f"Erreur commande !annonce: {error}")
+class AnnonceModal(Modal, title="Rédiger une annonce interne"):
+    titre = TextInput(label="Titre de l'annonce", style=discord.TextStyle.short, max_length=256, required=True)
+    paragraphe = TextInput(label="Contenu de l'annonce", style=discord.TextStyle.paragraph, max_length=2000, required=True)
+    conclusion = TextInput(label="Conclusion (optionnel)", style=discord.TextStyle.short, required=False)
+    async def on_submit(self, interaction: discord.Interaction):
+        annonce_channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+        if not annonce_channel:
+            await interaction.response.send_message("❌ Erreur : Le salon des annonces est introuvable.", ephemeral=True); return
+        user = interaction.user; role_priority = ["Patron", "Co-Patron", "Chef d'équipe", "Employé"]
+        user_role_name = next((name for name in role_priority if discord.utils.get(user.roles, name=name)), "Role non défini")
+        embed = discord.Embed(title=self.titre.value, description=self.paragraphe.value, color=discord.Color.blue())
+        if self.conclusion.value: embed.add_field(name="\u200b", value=self.conclusion.value, inline=False)
+        signature = f"Cordialement,\n**{user.display_name}**\n*{user_role_name}*"; embed.add_field(name="\u200b", value=signature, inline=False)
+        embed.set_footer(text=f"Annonce faite le {get_paris_time()}")
+        if interaction.guild.icon: embed.set_thumbnail(url=interaction.guild.icon.url)
+        try:
+            await annonce_channel.send(embed=embed)
+            await interaction.response.send_message("✅ Votre annonce a été publiée avec succès !", ephemeral=True)
+        except discord.Forbidden: await interaction.response.send_message("❌ Erreur : Je n'ai pas les permissions pour envoyer un message dans le salon des annonces.", ephemeral=True)
+class AnnonceView(View):
+    def __init__(self): super().__init__(timeout=None)
+    @discord.ui.button(label="Rédiger une annonce", style=discord.ButtonStyle.primary, custom_id="make_announcement")
+    async def announce_button(self, interaction: discord.Interaction, button: Button): await interaction.response.send_modal(AnnonceModal())
 
 
-# =================================================================================
-# SECTION 7 : GESTION GÉNÉRALE DU BOT
-# =================================================================================
 @bot.event
 async def on_ready():
     print(f'Bot connecté sous le nom : {bot.user.name}')
@@ -488,7 +492,7 @@ async def on_ready():
     bot.add_view(LocationsView())
     bot.add_view(AnnuaireView())
     bot.add_view(AbsenceView())
-    bot.add_view(AnnonceView()) # Ajout de la nouvelle vue persistante
+    bot.add_view(AnnonceView())
 
 # --- Lancement du bot ---
 if TOKEN:
