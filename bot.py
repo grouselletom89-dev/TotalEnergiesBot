@@ -140,7 +140,7 @@ def load_locations():
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 def get_default_locations():
-    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
+    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
     save_locations(default_data); return default_data
 def create_locations_embeds():
     data = load_locations()
@@ -370,7 +370,6 @@ class AbsenceModal(Modal, title="Déclarer une absence"):
     date_debut = TextInput(label="🗓️ Date de début", placeholder="Ex: 10/10/2025")
     date_fin = TextInput(label="🗓️ Date de fin", placeholder="Ex: 12/10/2025")
     motif = TextInput(label="📝 Motif", style=discord.TextStyle.paragraph, placeholder="Raison de votre absence...", max_length=1000)
-
     async def on_submit(self, interaction: discord.Interaction):
         absence_channel = bot.get_channel(ABSENCE_CHANNEL_ID)
         if not absence_channel:
@@ -455,37 +454,23 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         category = discord.utils.get(interaction.guild.categories, id=PRIVATE_CHANNEL_CATEGORY_ID)
         if not category:
-            await interaction.followup.send("❌ Erreur : La catégorie pour les salons privés est introuvable.", ephemeral=True)
-            return
-            
+            await interaction.followup.send("❌ Erreur : La catégorie pour les salons privés est introuvable.", ephemeral=True); return
         try:
             member = await interaction.guild.fetch_member(int(self.member_id.value))
         except (ValueError, discord.NotFound):
-            await interaction.followup.send("❌ Erreur : ID de membre invalide ou membre introuvable.", ephemeral=True)
-            return
-
-        # Formatage des noms et du nom de salon
-        first_name_clean = self.first_name.value.strip().lower()
-        last_name_clean = self.last_name.value.strip().lower()
+            await interaction.followup.send("❌ Erreur : ID de membre invalide ou membre introuvable.", ephemeral=True); return
+        first_name_clean = self.first_name.value.strip().lower(); last_name_clean = self.last_name.value.strip().lower()
         channel_name = f"📁・{first_name_clean}-{last_name_clean}"
         nickname = f"{self.first_name.value.strip().title()} {self.last_name.value.strip().title()}"
-
         if discord.utils.get(interaction.guild.text_channels, name=channel_name):
-            await interaction.followup.send(f"⚠️ Un salon nommé `{channel_name}` existe déjà.", ephemeral=True)
-            return
-
-        # Renommage du membre
+            await interaction.followup.send(f"⚠️ Un salon nommé `{channel_name}` existe déjà.", ephemeral=True); return
         try:
             await member.edit(nick=nickname)
         except discord.Forbidden:
             await interaction.followup.send(f"⚠️ Je n'ai pas la permission de renommer {member.display_name}.", ephemeral=True)
-        
-        # Permissions du salon
-        patron_role = discord.utils.get(interaction.guild.roles, name="Patron")
-        co_patron_role = discord.utils.get(interaction.guild.roles, name="Co-Patron")
+        patron_role = discord.utils.get(interaction.guild.roles, name="Patron"); co_patron_role = discord.utils.get(interaction.guild.roles, name="Co-Patron")
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True, read_message_history=True),
@@ -493,8 +478,6 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         }
         if patron_role: overwrites[patron_role] = discord.PermissionOverwrite(read_messages=True)
         if co_patron_role: overwrites[co_patron_role] = discord.PermissionOverwrite(read_messages=True)
-        
-        # Création du salon
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
             await new_channel.send(f"Bonjour {member.mention}, ce salon privé a été créé pour vous.")
@@ -505,7 +488,14 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
 @bot.command(name="open")
 @commands.has_any_role("Patron", "Co-Patron")
 async def open_channel(ctx):
-    await ctx.send_modal(OpenChannelModal())
+    await ctx.send("Cliquez sur le bouton pour ouvrir le formulaire de création de salon.", view=OpenChannelInitView(), ephemeral=True)
+
+class OpenChannelInitView(View):
+    def __init__(self):
+        super().__init__(timeout=60)
+    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary)
+    async def open_modal_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(OpenChannelModal())
 
 @open_channel.error
 async def open_channel_error(ctx, error):
