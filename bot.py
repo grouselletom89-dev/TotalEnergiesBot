@@ -537,9 +537,9 @@ def create_financial_embed(member: discord.Member):
     if member_id_str not in finances:
         finances[member_id_str] = {"solde": 0, "history": [], "weekly_earnings": 0, "current_week": 0}; save_finances(finances)
     solde = finances[member_id_str].get('solde', 0)
-    solde_formatted = f"{solde:,.2f} €".replace(',', ' ')
+    solde_formatted = f"{solde:,.2f}".replace(',', ' ')
     embed_color = discord.Color.red() if solde > 0 else discord.Color.green()
-    solde_message = f"🔴 Votre solde est de **{solde_formatted}**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted}**."
+    solde_message = f"🔴 Votre solde est de **{solde_formatted} €**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted} €**."
     financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Panneau de suivi des transactions.\n*Employé lié : {member.mention}*", color=embed_color)
     financial_embed.add_field(name="🧾 Solde Actuel", value=solde_message, inline=False)
     actions_text = "🚢 **Déclarer un trajet**\n💸 **Payer**\n➖ **Retirer un montant**\n📜 **Historique**"
@@ -556,9 +556,11 @@ async def create_balances_summary_embed(guild: discord.Guild):
     for member_id, data in finances.items():
         try: member_name = (await guild.fetch_member(int(member_id))).display_name
         except (discord.NotFound, ValueError): member_name = f"Utilisateur Inconnu ({member_id})"
-        balance_lines.append(f"• {member_name} → **`{data.get('solde', 0):,.2f}`.replace(',', ' ') €**")
+        solde_formatted = f"{data.get('solde', 0):,.2f}".replace(',', ' ')
+        balance_lines.append(f"• {member_name} → **`{solde_formatted} €`**")
     embed.description = "\n".join(balance_lines) if balance_lines else "Aucun employé n'a de solde."
-    embed.add_field(name="Total à Payer", value=f"💸 **`{total_due:,.2f} €`.replace(',', ' ')`**", inline=False)
+    total_due_formatted = f"{total_due:,.2f}".replace(',', ' ')
+    embed.add_field(name="Total à Payer", value=f"💸 **`{total_due_formatted} €`**", inline=False)
     embed.set_footer(text=f"Dernière mise à jour le {format_paris_time(get_paris_time())}")
     return embed
 
@@ -573,12 +575,13 @@ async def create_weekly_summary_embed(guild: discord.Guild):
         total_weekly_earnings += display_earnings
         try: member_name = (await guild.fetch_member(int(member_id))).display_name
         except (discord.NotFound, ValueError): member_name = f"Utilisateur Inconnu ({member_id})"
-        earning_lines.append(f"• {member_name} → **`{display_earnings:,.2f} €`.replace(',', ' ')`**")
+        earnings_formatted = f"{display_earnings:,.2f}".replace(',', ' ')
+        earning_lines.append(f"• {member_name} → **`{earnings_formatted} €`**")
     embed.description = "\n".join(earning_lines) if earning_lines else "Aucun gain enregistré cette semaine."
-    embed.add_field(name="Total des Gains de la Semaine", value=f"💰 **`{total_weekly_earnings:,.2f} €`.replace(',', ' ')`**", inline=False)
+    total_earnings_formatted = f"{total_weekly_earnings:,.2f}".replace(',', ' ')
+    embed.add_field(name="Total des Gains de la Semaine", value=f"💰 **`{total_earnings_formatted} €`**", inline=False)
     embed.set_footer(text=f"Semaine {current_week} - Mis à jour le {format_paris_time(get_paris_time())}")
     return embed
-
 class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
     def __init__(self, member: discord.Member, original_message: discord.Message):
         super().__init__(); self.member, self.original_message = member, original_message
@@ -673,7 +676,7 @@ class FinancialPanelView(View):
         await i.edit_original_response(embed=create_financial_embed(member))
 class BalancesSummaryView(View):
     def __init__(self): super().__init__(timeout=None)
-# ... (Sections 8-10)
+
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
 # =================================================================================
