@@ -474,10 +474,10 @@ def create_financial_embed(member: discord.Member):
 
     if solde > 0:
         embed_color = discord.Color.red()
-        solde_message = f"🔴 Vous avez un solde à régler de **{solde_formatted}**."
+        solde_message = f"🔴 Votre solde est de **{solde_formatted}**."
     else:
         embed_color = discord.Color.green()
-        solde_message = "🟢 Votre solde est à jour. Merci !"
+        solde_message = f"🟢 Votre solde est de **{solde_formatted}**."
 
     financial_embed = discord.Embed(
         title="💰 Panel de Gestion Financière",
@@ -571,7 +571,35 @@ class FinancialPanelView(View):
 
     @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
     async def pay_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
+        # Vérification des rôles
+        patron_role = discord.utils.get(interaction.guild.roles, name="Patron")
+        copatron_role = discord.utils.get(interaction.guild.roles, name="Co-Patron")
+        
+        if patron_role not in interaction.user.roles and copatron_role not in interaction.user.roles:
+            await interaction.response.send_message("❌ Vous n'avez pas la permission d'utiliser ce bouton.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+
+        # Retrouver l'employé
+        embed = interaction.message.embeds[0]
+        try:
+            user_id_str = embed.description.split('<@')[1].split('>')[0]
+            member = await interaction.guild.fetch_member(int(user_id_str))
+        except (IndexError, ValueError, discord.NotFound):
+            await interaction.followup.send("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
+            return
+
+        # Mettre le solde à 0
+        finances = load_finances()
+        member_id_str = str(member.id)
+        finances[member_id_str]["solde"] = 0
+        save_finances(finances)
+
+        # Mettre à jour le panel et confirmer
+        new_embed = create_financial_embed(member)
+        await interaction.message.edit(embed=new_embed)
+        await interaction.followup.send(f"✅ Le solde de **{member.display_name}** a été remis à zéro.", ephemeral=True)
 
     @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
     async def history_button(self, interaction: discord.Interaction, button: Button):
@@ -579,7 +607,7 @@ class FinancialPanelView(View):
     
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_financial_panel", emoji="🔄")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer() # Correction ici
+        await interaction.response.defer()
         embed = interaction.message.embeds[0]
         if not embed.description or '<@' not in embed.description:
             await interaction.followup.send("❌ Erreur : Impossible de trouver l'employé lié à ce panel.", ephemeral=True)
@@ -593,7 +621,7 @@ class FinancialPanelView(View):
             return
 
         new_embed = create_financial_embed(member)
-        await interaction.edit_original_response(embed=new_embed) # Correction ici
+        await interaction.edit_original_response(embed=new_embed)
 
 
 # =================================================================================
@@ -688,15 +716,13 @@ async def find_and_update_panel(channel, embed_title, new_embed=None, new_embed_
     try:
         async for msg in channel.history(limit=50):
             if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed_title:
-                if new_embed_coro: new_embed = await new_embed_coro
+                if new_embed_coro: new_embed = await new_embed_coro(channel.guild)
                 await msg.edit(embed=new_embed, view=new_view)
                 return
     except (discord.Forbidden, discord.HTTPException):
-        # Ne peut pas lire l'historique ou éditer, on enverra un nouveau message
         pass
 
-    # Si aucun message n'a été trouvé ou n'a pu être édité
-    if new_embed_coro: new_embed = await new_embed_coro
+    if new_embed_coro: new_embed = await new_embed_coro(channel.guild)
     await channel.send(embed=new_embed, view=new_view)
 
 @bot.command(name="setup")
@@ -711,7 +737,7 @@ async def setup_panels(ctx):
         await find_and_update_panel(
             channel=annuaire_channel,
             embed_title="📞 Annuaire Téléphonique",
-            new_embed_coro=create_annuaire_embed(ctx.guild),
+            new_embed_coro=create_annuaire_embed,
             new_view=AnnuaireView()
         )
 
