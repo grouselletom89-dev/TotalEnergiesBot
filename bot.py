@@ -21,6 +21,7 @@ ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
 ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
+MANAGEMENT_CHANNEL_ID = 1426356300429918289 # ID du salon de management mis à jour
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -571,7 +572,6 @@ class FinancialPanelView(View):
 
     @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
     async def pay_button(self, interaction: discord.Interaction, button: Button):
-        # Vérification des rôles
         patron_role = discord.utils.get(interaction.guild.roles, name="Patron")
         copatron_role = discord.utils.get(interaction.guild.roles, name="Co-Patron")
         
@@ -581,7 +581,6 @@ class FinancialPanelView(View):
         
         await interaction.response.defer(ephemeral=True)
 
-        # Retrouver l'employé
         embed = interaction.message.embeds[0]
         try:
             user_id_str = embed.description.split('<@')[1].split('>')[0]
@@ -590,13 +589,11 @@ class FinancialPanelView(View):
             await interaction.followup.send("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
             return
 
-        # Mettre le solde à 0
         finances = load_finances()
         member_id_str = str(member.id)
         finances[member_id_str]["solde"] = 0
         save_finances(finances)
 
-        # Mettre à jour le panel et confirmer
         new_embed = create_financial_embed(member)
         await interaction.message.edit(embed=new_embed)
         await interaction.followup.send(f"✅ Le solde de **{member.display_name}** a été remis à zéro.", ephemeral=True)
@@ -625,7 +622,7 @@ class FinancialPanelView(View):
 
 
 # =================================================================================
-# SECTION 8 : LOGIQUE POUR LA COMMANDE !OPEN
+# SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
 # =================================================================================
 class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
     member_id = TextInput(label="ID du membre", placeholder="Collez l'ID de l'utilisateur ici")
@@ -688,41 +685,29 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         except discord.Forbidden:
             await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
 
-@bot.command(name="open")
-@commands.has_any_role("Patron", "Co-Patron")
-async def open_channel(ctx):
-    await ctx.send("Cliquez sur le bouton pour ouvrir le formulaire de création de salon.", view=OpenChannelInitView(), ephemeral=True)
-
 class OpenChannelInitView(View):
     def __init__(self):
         super().__init__(timeout=None)
-    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary)
+    
+    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary, custom_id="create_private_channel_btn")
     async def open_modal_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(OpenChannelModal())
-
-@open_channel.error
-async def open_channel_error(ctx, error):
-    if isinstance(error, commands.MissingAnyRole):
-        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
-    else:
-        print(f"Erreur commande !open: {error}")
-        await ctx.send("❌ Une erreur est survenue.", ephemeral=True)
 
 # =================================================================================
 # SECTION 9 : COMMANDE SETUP POUR RAFRAÎCHIR LES PANNEAUX
 # =================================================================================
-async def find_and_update_panel(channel, embed_title, new_embed=None, new_embed_coro=None, new_view=None):
+async def find_and_update_panel(channel, embed_title, new_embed=None, new_embed_coro=None, new_view=None, guild=None):
     """Helper: Trouve le message d'un panel et le met à jour, ou en crée un nouveau."""
     try:
         async for msg in channel.history(limit=50):
             if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed_title:
-                if new_embed_coro: new_embed = await new_embed_coro(channel.guild)
+                if new_embed_coro: new_embed = await new_embed_coro(guild)
                 await msg.edit(embed=new_embed, view=new_view)
                 return
     except (discord.Forbidden, discord.HTTPException):
         pass
 
-    if new_embed_coro: new_embed = await new_embed_coro(channel.guild)
+    if new_embed_coro: new_embed = await new_embed_coro(guild)
     await channel.send(embed=new_embed, view=new_view)
 
 @bot.command(name="setup")
@@ -738,7 +723,8 @@ async def setup_panels(ctx):
             channel=annuaire_channel,
             embed_title="📞 Annuaire Téléphonique",
             new_embed_coro=create_annuaire_embed,
-            new_view=AnnuaireView()
+            new_view=AnnuaireView(),
+            guild=ctx.guild
         )
 
     # Absences
@@ -762,8 +748,23 @@ async def setup_panels(ctx):
             new_embed=embed,
             new_view=AnnonceView()
         )
+
+    # Panneau de Management (avec le bouton pour !open)
+    management_channel = bot.get_channel(MANAGEMENT_CHANNEL_ID)
+    if management_channel:
+        embed = discord.Embed(
+            title="Panneau de Gestion des Employés",
+            description="Utilisez le bouton ci-dessous pour créer un nouveau dossier (salon privé) pour un employé.",
+            color=discord.Color.dark_red()
+        )
+        await find_and_update_panel(
+            channel=management_channel,
+            embed_title="Panneau de Gestion des Employés",
+            new_embed=embed,
+            new_view=OpenChannelInitView()
+        )
         
-    await ctx.followup.send("✅ Panneaux principaux (Annuaire, Absences, Annonces) mis à jour !", ephemeral=True)
+    await ctx.followup.send("✅ Panneaux principaux mis à jour !", ephemeral=True)
 
 @setup_panels.error
 async def setup_panels_error(ctx, error):
