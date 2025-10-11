@@ -10,8 +10,8 @@ import pytz
 # --- DÉFINITION DU BOT ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 intents = discord.Intents.default()
-intents.message_content = True 
-intents.members = True 
+intents.message_content = True
+intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- CONFIGURATION ---
@@ -21,8 +21,8 @@ ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
 ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
-MANAGEMENT_CHANNEL_ID = 1426356300429918289 
-BALANCES_SUMMARY_CHANNEL_ID = 1420794939565936748 # <-- NOUVEAU
+MANAGEMENT_CHANNEL_ID = 1426356300429918289
+BALANCES_SUMMARY_CHANNEL_ID = 1420794939565936748
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -481,6 +481,20 @@ def add_to_history(member_id: int, action: str, amount_str: str, details: str = 
     finances[member_id_str]["history"] = finances[member_id_str]["history"][:15]
     save_finances(finances)
 
+async def update_balances_summary_panel():
+    """Fonction pour trouver et mettre à jour le panneau récapitulatif des soldes."""
+    channel = bot.get_channel(BALANCES_SUMMARY_CHANNEL_ID)
+    if not channel: return
+    
+    try:
+        new_embed = await create_balances_summary_embed(channel.guild)
+        async for message in channel.history(limit=50):
+            if message.author == bot.user and message.embeds and message.embeds[0].title == "📊 Récapitulatif des Soldes":
+                await message.edit(embed=new_embed)
+                return
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour auto du panneau des soldes: {e}")
+
 def create_financial_embed(member: discord.Member):
     finances = load_finances()
     member_id_str = str(member.id)
@@ -507,7 +521,6 @@ def create_financial_embed(member: discord.Member):
     financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
     return financial_embed
 
-# --- NOUVELLE FONCTION POUR LE PANEL RÉCAPITULATIF ---
 async def create_balances_summary_embed(guild: discord.Guild):
     embed = discord.Embed(title="📊 Récapitulatif des Soldes", description="Voici un aperçu de tous les soldes des employés.", color=discord.Color.gold())
     finances = load_finances()
@@ -559,6 +572,7 @@ class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
         save_finances(finances)
         add_to_history(self.member.id, f"Ajout Trajet {ttype}", f"+{amount_to_add}€", loc if ttype == "T3" else "")
         await self.original_message.edit(embed=create_financial_embed(self.member))
+        await update_balances_summary_panel()
         await interaction.followup.send(f"✅ Trajet **{ttype}** de **{amount_to_add}€** ajouté à {self.member.display_name}.", ephemeral=True)
 
 class FinancialPanelView(View):
@@ -592,6 +606,7 @@ class FinancialPanelView(View):
         save_finances(finances)
         add_to_history(member.id, "Paiement", f"-{balance}€", "Solde remis à zéro")
         await interaction.message.edit(embed=create_financial_embed(member))
+        await update_balances_summary_panel()
         await interaction.followup.send(f"✅ Le solde de **{member.display_name}** a été payé.", ephemeral=True)
 
     @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
@@ -622,17 +637,9 @@ class FinancialPanelView(View):
         except (IndexError, ValueError, discord.NotFound): await interaction.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
         await interaction.edit_original_response(embed=create_financial_embed(member))
 
-# --- NOUVELLE VIEW POUR LE PANEL RÉCAPITULATIF ---
 class BalancesSummaryView(View):
     def __init__(self):
         super().__init__(timeout=None)
-
-    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_balances_summary", emoji="🔄")
-    async def refresh_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        new_embed = await create_balances_summary_embed(interaction.guild)
-        await interaction.edit_original_response(embed=new_embed)
-
 
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
@@ -673,6 +680,7 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
             welcome_embed.set_thumbnail(url=member.display_avatar.url)
             await new_channel.send(embed=welcome_embed)
             await new_channel.send(embed=create_financial_embed(member), view=FinancialPanelView())
+            await update_balances_summary_panel()
             await interaction.followup.send(f"✅ Salon {new_channel.mention} créé et {member.display_name} renommé avec succès.", ephemeral=True)
         except discord.Forbidden: await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
 
@@ -739,7 +747,7 @@ async def on_ready():
     bot.add_view(AnnonceView())
     bot.add_view(OpenChannelInitView())
     bot.add_view(FinancialPanelView())
-    bot.add_view(BalancesSummaryView()) # <-- NOUVEAU
+    bot.add_view(BalancesSummaryView())
 
 # --- Lancement du bot ---
 if TOKEN:
