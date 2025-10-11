@@ -512,7 +512,7 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
 class OpenChannelInitView(View):
     def __init__(self):
         super().__init__(timeout=None)
-    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary, custom_id="open_private_channel")
+    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary)
     async def open_modal_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(OpenChannelModal())
 
