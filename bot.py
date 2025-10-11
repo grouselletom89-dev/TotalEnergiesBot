@@ -544,13 +544,11 @@ class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
             await interaction.followup.send("❌ Type de trajet invalide. Veuillez utiliser T1, T2, ou T3.", ephemeral=True)
             return
 
-        # Mettre à jour les finances
         finances = load_finances()
         member_id_str = str(self.member.id)
         finances[member_id_str]["solde"] += amount_to_add
         save_finances(finances)
 
-        # Rafraîchir le panel original et confirmer
         new_embed = create_financial_embed(self.member)
         await self.original_message.edit(embed=new_embed)
         await interaction.followup.send(f"✅ Trajet **{ttype}** d'un montant de **{amount_to_add}€** déclaré avec succès !", ephemeral=True)
@@ -561,7 +559,6 @@ class FinancialPanelView(View):
 
     @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
     async def declare_trip_button(self, interaction: discord.Interaction, button: Button):
-        # Retrouver l'employé lié au panel
         embed = interaction.message.embeds[0]
         try:
             user_id_str = embed.description.split('<@')[1].split('>')[0]
@@ -570,7 +567,6 @@ class FinancialPanelView(View):
             await interaction.response.send_message("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
             return
         
-        # Ouvrir la modale pour la déclaration
         await interaction.response.send_modal(DeclareTripModal(member=member, original_message=interaction.message))
 
     @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
@@ -583,21 +579,21 @@ class FinancialPanelView(View):
     
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_financial_panel", emoji="🔄")
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer() # Correction ici
         embed = interaction.message.embeds[0]
         if not embed.description or '<@' not in embed.description:
-            await interaction.response.send_message("❌ Erreur : Impossible de trouver l'employé lié à ce panel.", ephemeral=True)
+            await interaction.followup.send("❌ Erreur : Impossible de trouver l'employé lié à ce panel.", ephemeral=True)
             return
 
         try:
             user_id_str = embed.description.split('<@')[1].split('>')[0]
-            user_id = int(user_id_str)
-            member = await interaction.guild.fetch_member(user_id)
+            member = await interaction.guild.fetch_member(int(user_id_str))
         except (IndexError, ValueError, discord.NotFound):
-            await interaction.response.send_message("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
+            await interaction.followup.send("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
             return
 
         new_embed = create_financial_embed(member)
-        await interaction.response.edit_message(embed=new_embed)
+        await interaction.edit_original_response(embed=new_embed) # Correction ici
 
 
 # =================================================================================
@@ -684,9 +680,72 @@ async def open_channel_error(ctx, error):
         print(f"Erreur commande !open: {error}")
         await ctx.send("❌ Une erreur est survenue.", ephemeral=True)
 
+# =================================================================================
+# SECTION 9 : COMMANDE SETUP POUR RAFRAÎCHIR LES PANNEAUX
+# =================================================================================
+async def find_and_update_panel(channel, embed_title, new_embed=None, new_embed_coro=None, new_view=None):
+    """Helper: Trouve le message d'un panel et le met à jour, ou en crée un nouveau."""
+    try:
+        async for msg in channel.history(limit=50):
+            if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed_title:
+                if new_embed_coro: new_embed = await new_embed_coro
+                await msg.edit(embed=new_embed, view=new_view)
+                return
+    except (discord.Forbidden, discord.HTTPException):
+        # Ne peut pas lire l'historique ou éditer, on enverra un nouveau message
+        pass
+
+    # Si aucun message n'a été trouvé ou n'a pu être édité
+    if new_embed_coro: new_embed = await new_embed_coro
+    await channel.send(embed=new_embed, view=new_view)
+
+@bot.command(name="setup")
+@commands.has_any_role("Patron", "Co-Patron")
+async def setup_panels(ctx):
+    """Met à jour ou crée les panneaux d'information principaux."""
+    await ctx.response.defer(ephemeral=True, thinking=True)
+    
+    # Annuaire
+    annuaire_channel = bot.get_channel(ANNUAIRE_CHANNEL_ID)
+    if annuaire_channel:
+        await find_and_update_panel(
+            channel=annuaire_channel,
+            embed_title="📞 Annuaire Téléphonique",
+            new_embed_coro=create_annuaire_embed(ctx.guild),
+            new_view=AnnuaireView()
+        )
+
+    # Absences
+    absence_channel = bot.get_channel(ABSENCE_CHANNEL_ID)
+    if absence_channel:
+        embed = discord.Embed(title="Gestion des Absences", description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.", color=discord.Color.dark_grey())
+        await find_and_update_panel(
+            channel=absence_channel,
+            embed_title="Gestion des Absences",
+            new_embed=embed,
+            new_view=AbsenceView()
+        )
+
+    # Annonces
+    annonce_channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+    if annonce_channel:
+        embed = discord.Embed(title="Panneau des Annonces Internes", description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.", color=discord.Color.dark_blue())
+        await find_and_update_panel(
+            channel=annonce_channel,
+            embed_title="Panneau des Annonces Internes",
+            new_embed=embed,
+            new_view=AnnonceView()
+        )
+        
+    await ctx.followup.send("✅ Panneaux principaux (Annuaire, Absences, Annonces) mis à jour !", ephemeral=True)
+
+@setup_panels.error
+async def setup_panels_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
 
 # =================================================================================
-# SECTION 9 : GESTION GÉNÉRALE DU BOT
+# SECTION 10 : GESTION GÉNÉRALE DU BOT
 # =================================================================================
 @bot.event
 async def on_ready():
