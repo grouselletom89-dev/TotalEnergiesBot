@@ -546,7 +546,6 @@ def create_financial_embed(member: discord.Member):
     actions_text = (
         "🚢 **Déclarer un trajet** : T1 / T2 / T3\n"
         "💸 **Payer** : réservé patron/co-patron\n"
-        "➖ **Retirer un montant**\n"
         "📜 **Historique** : voir les 10 dernières opérations"
     )
     financial_embed.add_field(name="🛠️ Actions Disponibles", value=actions_text, inline=False)
@@ -615,25 +614,7 @@ class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
         await self.original_message.edit(embed=create_financial_embed(self.member))
         await update_summary_panels()
         await interaction.followup.send(f"✅ Trajet **{ttype}** de **{amount_to_add}€** ajouté à {self.member.display_name}.", ephemeral=True)
-class RemoveAmountModal(Modal, title="Retirer un Montant"):
-    def __init__(self, member: discord.Member, original_message: discord.Message):
-        super().__init__(); self.member, self.original_message = member, original_message
-    amount = TextInput(label="Montant à retirer", placeholder="Ex: 500", required=True)
-    reason = TextInput(label="Raison du retrait", style=discord.TextStyle.paragraph, placeholder="Ex: Amende pour excès de vitesse", required=True)
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        try: amount_to_remove = int(self.amount.value)
-        except ValueError: await interaction.followup.send("❌ Le montant doit être un nombre valide.", ephemeral=True); return
-        if amount_to_remove <= 0: await interaction.followup.send("❌ Le montant doit être un nombre positif.", ephemeral=True); return
-        finances, member_id_str = load_finances(), str(self.member.id)
-        finances[member_id_str]["solde"] -= amount_to_remove
-        save_finances(finances)
-        reason_str = self.reason.value
-        add_to_history(self.member.id, "Retrait Manuel", f"-{amount_to_remove}€", reason_str)
-        await log_finance_change(interaction, self.member, "Retrait Manuel", f"-{amount_to_remove}€", reason_str)
-        await self.original_message.edit(embed=create_financial_embed(self.member))
-        await update_summary_panels()
-        await interaction.followup.send(f"✅ Montant de **{amount_to_remove}€** retiré du solde de {self.member.display_name}.", ephemeral=True)
+
 class FinancialPanelView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
@@ -656,12 +637,6 @@ class FinancialPanelView(View):
         await i.message.edit(embed=create_financial_embed(member))
         await update_summary_panels()
         await i.followup.send(f"✅ Le solde de **{member.display_name}** a été payé.", ephemeral=True)
-    @discord.ui.button(label="Retirer un montant", style=discord.ButtonStyle.danger, custom_id="remove_amount")
-    async def remove_amount_button(self, i: discord.Interaction, b: Button):
-        if not any(r.name in ["Patron", "Co-Patron"] for r in i.user.roles): await i.response.send_message("❌ Vous n'avez pas la permission.", ephemeral=True); return
-        try: member = await i.guild.fetch_member(int(i.message.embeds[0].description.split('<@')[1].split('>')[0]))
-        except: await i.response.send_message("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
-        await i.response.send_modal(RemoveAmountModal(member, i.message))
     @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
     async def history_button(self, i: discord.Interaction, b: Button):
         await i.response.defer(ephemeral=True)
@@ -680,6 +655,7 @@ class FinancialPanelView(View):
         await i.edit_original_response(embed=create_financial_embed(member))
 class BalancesSummaryView(View):
     def __init__(self): super().__init__(timeout=None)
+
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
 # =================================================================================
