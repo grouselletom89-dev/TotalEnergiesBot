@@ -465,7 +465,6 @@ def create_financial_embed(member: discord.Member):
     finances = load_finances()
     member_id_str = str(member.id)
     
-    # S'assurer que l'utilisateur a une entrée, au cas où.
     if member_id_str not in finances:
         finances[member_id_str] = {"solde": 0}
         save_finances(finances)
@@ -473,7 +472,6 @@ def create_financial_embed(member: discord.Member):
     solde = finances[member_id_str].get('solde', 0)
     solde_formatted = f"{solde:,.2f} €".replace(',', ' ')
 
-    # Définir la couleur et le message en fonction du solde
     if solde > 0:
         embed_color = discord.Color.red()
         solde_message = f"🔴 Vous avez un solde à régler de **{solde_formatted}**."
@@ -493,9 +491,15 @@ def create_financial_embed(member: discord.Member):
         value=solde_message,
         inline=False
     )
+
+    actions_text = (
+        "🚢 **Déclarer un trajet** : T1 / T2 / T3\n"
+        "💸 **Payer** : réservé patron/co-patron\n"
+        "📜 **Historique** : voir les 10 dernières opérations"
+    )
     financial_embed.add_field(
         name="🛠️ Actions Disponibles",
-        value="Utilisez les boutons ci-dessous pour gérer vos finances.",
+        value=actions_text,
         inline=False
     )
     financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
@@ -583,7 +587,6 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
             
-            # Message de bienvenue
             welcome_embed = discord.Embed(
                 title=f"Bienvenue {nickname} !",
                 description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.\n\nN'hésitez pas à utiliser cet espace pour toute question ou demande. Nous restons à votre écoute.",
@@ -594,7 +597,6 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
             welcome_embed.set_thumbnail(url=member.display_avatar.url)
             await new_channel.send(embed=welcome_embed)
 
-            # Utilisation de la nouvelle fonction pour créer le panel financier
             financial_embed = create_financial_embed(member)
             await new_channel.send(embed=financial_embed, view=FinancialPanelView())
 
