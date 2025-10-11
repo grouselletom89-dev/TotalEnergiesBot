@@ -10,8 +10,8 @@ import pytz
 # --- DÉFINITION DU BOT ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+intents.message_content = True 
+intents.members = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- CONFIGURATION ---
@@ -21,8 +21,9 @@ ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
 ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
-MANAGEMENT_CHANNEL_ID = 1426356300429918289
+MANAGEMENT_CHANNEL_ID = 1426356300429918289 
 BALANCES_SUMMARY_CHANNEL_ID = 1420794939565936748
+STOCK_LOG_CHANNEL_ID = 1425805691754516541 # <-- NOUVEAU
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -32,11 +33,40 @@ FINANCES_PATH = "/data/finances.json"
 
 def get_paris_time():
     paris_tz = pytz.timezone("Europe/Paris")
-    return datetime.now(paris_tz).strftime('%d/%m/%Y %H:%M:%S')
+    return datetime.now(paris_tz)
+
+def format_paris_time(dt_obj):
+    return dt_obj.strftime('%d/%m/%Y %H:%M:%S')
 
 # =================================================================================
 # SECTION 1 : LOGIQUE POUR LA COMMANDE !STOCKS
 # =================================================================================
+
+async def log_stock_change(interaction: discord.Interaction, changes: list, action_type: str):
+    log_channel = bot.get_channel(STOCK_LOG_CHANNEL_ID)
+    if not log_channel:
+        print(f"ERREUR: Le salon de log des stocks (ID: {STOCK_LOG_CHANNEL_ID}) est introuvable.")
+        return
+
+    embed = discord.Embed(
+        title=f"📝 Log de Modification des Stocks",
+        description=f"**Action :** {action_type}\n**Auteur :** {interaction.user.mention}",
+        color=discord.Color.blue(),
+        timestamp=get_paris_time()
+    )
+
+    for change in changes:
+        field_name = change.get("item", "Action").replace('_', ' ').title()
+        value_str = f"Ancienne valeur : `{change.get('old', 'N/A')}`\nNouvelle valeur : `{change.get('new', 'N/A')}`"
+        embed.add_field(name=field_name, value=value_str, inline=False)
+
+    embed.set_footer(text=f"ID de l'utilisateur : {interaction.user.id}")
+    
+    try:
+        await log_channel.send(embed=embed)
+    except discord.Forbidden:
+        print(f"ERREUR: Permissions manquantes pour envoyer des messages dans le salon de log des stocks.")
+
 def load_stocks():
     try:
         with open(STOCKS_PATH, "r", encoding="utf-8") as f: return json.load(f)
@@ -54,7 +84,7 @@ def create_stocks_embed():
     embed.add_field(name="📊 Total", value=f"Pétrole non raffiné : **{total.get('petrole_non_raffine', 0):,}**".replace(',', ' '), inline=False)
     carburants_text = (f"Gazole: **{total.get('gazole', 0):,}** | SP95: **{total.get('sp95', 0):,}** | SP98: **{total.get('sp98', 0):,}** | Kérosène: **{total.get('kerosene', 0):,}**").replace(',', ' ')
     embed.add_field(name="Carburants disponibles", value=carburants_text, inline=False)
-    embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
+    embed.set_footer(text=f"Dernière mise à jour le {format_paris_time(get_paris_time())}")
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/fr/thumb/c/c8/TotalEnergies_logo.svg/1200px-TotalEnergies_logo.svg.png")
     return embed
 class TotalStockModal(Modal, title="Mettre à jour le stock Total"):
@@ -69,19 +99,37 @@ class TotalStockModal(Modal, title="Mettre à jour le stock Total"):
         self.add_item(TextInput(label="Nouvelle quantité de Kérosène", custom_id="kerosene", default=str(current_stocks.get("kerosene", 0))))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = load_stocks(); total_stocks = data['total']
+        data = load_stocks()
+        old_total_stocks = data.get("total", {}).copy()
+        changes = []
+
         for field in self.children:
             try:
-                value = int(field.value)
-                if value < 0: await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id} ne peut pas être négative.", ephemeral=True); return
-                total_stocks[field.custom_id] = value
-            except ValueError: await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id} doit être un nombre.", ephemeral=True); return
-        save_stocks(data)
+                new_value = int(field.value)
+                if new_value < 0:
+                    await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id} ne peut pas être négative.", ephemeral=True); return
+                
+                old_value = old_total_stocks.get(field.custom_id, 0)
+                if new_value != old_value:
+                    changes.append({
+                        "item": f"Total - {field.custom_id}",
+                        "old": f"{old_value:,}".replace(',', ' '),
+                        "new": f"{new_value:,}".replace(',', ' ')
+                    })
+                data['total'][field.custom_id] = new_value
+            except ValueError:
+                await interaction.followup.send(f"⚠️ La quantité pour {field.custom_id} doit être un nombre.", ephemeral=True); return
+
+        if changes:
+            await log_stock_change(interaction, changes, "Mise à jour groupée du stock 'Total'")
+            save_stocks(data)
+        
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_stocks_embed())
             await interaction.followup.send("✅ Stock 'Total' mis à jour !", ephemeral=True)
-        except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
+        except (discord.NotFound, discord.Forbidden):
+            await interaction.followup.send("⚠️ Panneau mis à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
 class StockModal(Modal):
     def __init__(self, category: str, carburant: str, original_message_id: int):
         self.category, self.carburant, self.original_message_id = category, carburant, original_message_id
@@ -91,9 +139,18 @@ class StockModal(Modal):
         await interaction.response.defer(ephemeral=True)
         try: quantite = int(self.nouvelle_quantite.value)
         except ValueError: await interaction.followup.send("⚠️ La quantité doit être un nombre.", ephemeral=True); return
-        data=load_stocks()
-        if self.category in data and self.carburant in data[self.category]: data[self.category][self.carburant] = quantite; save_stocks(data)
-        else: await interaction.followup.send("❌ Erreur, catégorie ou carburant introuvable.", ephemeral=True); return
+        
+        data = load_stocks()
+        if self.category not in data or self.carburant not in data[self.category]:
+            await interaction.followup.send("❌ Erreur, catégorie ou carburant introuvable.", ephemeral=True); return
+
+        old_value = data[self.category][self.carburant]
+        if quantite != old_value:
+            data[self.category][self.carburant] = quantite
+            changes = [{"item": f"{self.category.title()} - {self.carburant}", "old": f"{old_value:,}".replace(',', ' '), "new": f"{quantite:,}".replace(',', ' ')}]
+            await log_stock_change(interaction, changes, "Mise à jour d'un stock")
+            save_stocks(data)
+        
         try:
             msg = await interaction.channel.fetch_message(self.original_message_id)
             if msg: await msg.edit(embed=create_stocks_embed())
@@ -113,6 +170,8 @@ class ResetConfirmationView(View):
     def __init__(self, original_message_id: int): super().__init__(timeout=60); self.original_message_id = original_message_id
     @discord.ui.button(label="Confirmer", style=discord.ButtonStyle.danger)
     async def confirm_button(self, i: discord.Interaction, b: Button):
+        changes = [{"item": "Action Globale", "old": "Données actuelles", "new": "Tout à zéro"}]
+        await log_stock_change(i, changes, "Réinitialisation complète des stocks")
         save_stocks(get_default_stocks())
         try: 
             msg = await i.channel.fetch_message(self.original_message_id)
@@ -474,7 +533,7 @@ def add_to_history(member_id: int, action: str, amount_str: str, details: str = 
         "action": action, 
         "details": details, 
         "amount": amount_str, 
-        "timestamp": get_paris_time()
+        "timestamp": format_paris_time(get_paris_time())
     }
     
     finances[member_id_str]["history"].insert(0, log_entry)
@@ -547,7 +606,7 @@ async def create_balances_summary_embed(guild: discord.Guild):
     embed.description = "\n".join(balance_lines) if balance_lines else "Aucun employé n'a de solde enregistré."
     total_due_formatted = f"{total_due:,.2f} €".replace(',', ' ')
     embed.add_field(name="Total à Payer (Somme des soldes positifs)", value=f"💸 **`{total_due_formatted}`**", inline=False)
-    embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
+    embed.set_footer(text=f"Dernière mise à jour le {format_paris_time(get_paris_time())}")
     return embed
 
 class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
@@ -640,6 +699,9 @@ class FinancialPanelView(View):
 class BalancesSummaryView(View):
     def __init__(self):
         super().__init__(timeout=None)
+        # Le bouton rafraîchir a été retiré, la vue est vide mais nécessaire pour on_ready
+        pass
+
 
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
@@ -717,8 +779,8 @@ async def setup_panels(ctx):
             found = False
             async for message in channel.history(limit=50):
                 if message.author == bot.user and message.embeds and message.embeds[0].title == config["title"]:
-                    await message.edit(embed=embed_content, view=config["view"]); found = True; break
-            if not found: await channel.send(embed=embed_content, view=config["view"])
+                    await message.edit(embed=embed_content, view=config.get("view")); found = True; break
+            if not found: await channel.send(embed=embed_content, view=config.get("view"))
         except discord.Forbidden: print(f"ERREUR: Permissions manquantes dans '{channel.name}' pour '{name}'.")
         except Exception as e: print(f"ERREUR lors de la mise à jour de '{name}': {e}")
             
