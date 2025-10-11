@@ -21,7 +21,8 @@ ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
 ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
-MANAGEMENT_CHANNEL_ID = 1426356300429918289 # ID du salon de management
+MANAGEMENT_CHANNEL_ID = 1426356300429918289 
+BALANCES_SUMMARY_CHANNEL_ID = 1420794939565936748 # <-- NOUVEAU
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -477,136 +478,120 @@ def add_to_history(member_id: int, action: str, amount_str: str, details: str = 
     }
     
     finances[member_id_str]["history"].insert(0, log_entry)
-    finances[member_id_str]["history"] = finances[member_id_str]["history"][:15] # Garde les 15 dernières entrées
+    finances[member_id_str]["history"] = finances[member_id_str]["history"][:15]
     save_finances(finances)
 
 def create_financial_embed(member: discord.Member):
-    """Crée et retourne l'embed du panel financier pour un membre donné."""
     finances = load_finances()
     member_id_str = str(member.id)
-    
     if member_id_str not in finances:
         finances[member_id_str] = {"solde": 0, "history": []}
         save_finances(finances)
-
     solde = finances[member_id_str].get('solde', 0)
     solde_formatted = f"{solde:,.2f} €".replace(',', ' ')
-
-    if solde > 0:
-        embed_color = discord.Color.red()
-        solde_message = f"🔴 Votre solde est de **{solde_formatted}**."
-    else:
-        embed_color = discord.Color.green()
-        solde_message = f"🟢 Votre solde est de **{solde_formatted}**."
+    embed_color = discord.Color.red() if solde > 0 else discord.Color.green()
+    solde_message = f"🔴 Votre solde est de **{solde_formatted}**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted}**."
 
     financial_embed = discord.Embed(
         title="💰 Panel de Gestion Financière",
         description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*",
         color=embed_color
     )
-    
-    financial_embed.add_field(
-        name="🧾 Solde Actuel",
-        value=solde_message,
-        inline=False
-    )
-
+    financial_embed.add_field(name="🧾 Solde Actuel", value=solde_message, inline=False)
     actions_text = (
         "🚢 **Déclarer un trajet** : T1 / T2 / T3\n"
         "💸 **Payer** : réservé patron/co-patron\n"
         "📜 **Historique** : voir les 10 dernières opérations"
     )
-    financial_embed.add_field(
-        name="🛠️ Actions Disponibles",
-        value=actions_text,
-        inline=False
-    )
+    financial_embed.add_field(name="🛠️ Actions Disponibles", value=actions_text, inline=False)
     financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
-    
     return financial_embed
+
+# --- NOUVELLE FONCTION POUR LE PANEL RÉCAPITULATIF ---
+async def create_balances_summary_embed(guild: discord.Guild):
+    embed = discord.Embed(title="📊 Récapitulatif des Soldes", description="Voici un aperçu de tous les soldes des employés.", color=discord.Color.gold())
+    finances = load_finances()
+    if not finances:
+        embed.description = "Aucune donnée financière n'a été trouvée."
+        return embed
+
+    total_due = 0
+    balance_lines = []
+
+    for member_id, data in finances.items():
+        solde = data.get("solde", 0)
+        if solde > 0:
+            total_due += solde
+        try:
+            member = await guild.fetch_member(int(member_id))
+            member_name = member.display_name
+        except (discord.NotFound, ValueError):
+            member_name = f"Utilisateur Inconnu (ID: {member_id})"
+
+        solde_formatted = f"{solde:,.2f} €".replace(',', ' ')
+        balance_lines.append(f"• {member_name} → **`{solde_formatted}`**")
+
+    embed.description = "\n".join(balance_lines) if balance_lines else "Aucun employé n'a de solde enregistré."
+    total_due_formatted = f"{total_due:,.2f} €".replace(',', ' ')
+    embed.add_field(name="Total à Payer (Somme des soldes positifs)", value=f"💸 **`{total_due_formatted}`**", inline=False)
+    embed.set_footer(text=f"Dernière mise à jour le {get_paris_time()}")
+    return embed
 
 class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
     def __init__(self, member: discord.Member, original_message: discord.Message):
         super().__init__()
         self.member = member
         self.original_message = original_message
-
     trip_type = TextInput(label="Type de trajet (T1, T2, ou T3)", placeholder="Ex: T2", max_length=2, required=True)
     location = TextInput(label="Lieu (requis pour T3 : station ou export)", placeholder="Laissez vide si ce n'est pas un T3", required=False)
-
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
-        ttype = self.trip_type.value.strip().upper()
-        loc = self.location.value.strip().lower()
-        amount_to_add = 0
-
+        ttype, loc, amount_to_add = self.trip_type.value.strip().upper(), self.location.value.strip().lower(), 0
         if ttype == "T1": amount_to_add = 3200
         elif ttype == "T2": amount_to_add = 1600
         elif ttype == "T3":
-            if loc not in ["station", "export"]:
-                await interaction.followup.send("❌ Pour un trajet T3, le lieu doit être `station` ou `export`.", ephemeral=True); return
+            if loc not in ["station", "export"]: await interaction.followup.send("❌ Pour un T3, le lieu doit être `station` ou `export`.", ephemeral=True); return
             amount_to_add = 3200
-        else:
-            await interaction.followup.send("❌ Type de trajet invalide. Veuillez utiliser T1, T2, ou T3.", ephemeral=True); return
+        else: await interaction.followup.send("❌ Type de trajet invalide. Utilisez T1, T2, ou T3.", ephemeral=True); return
 
-        # Mettre à jour le solde
         finances = load_finances()
-        member_id_str = str(self.member.id)
-        finances[member_id_str]["solde"] += amount_to_add
+        finances[str(self.member.id)]["solde"] += amount_to_add
         save_finances(finances)
-
-        # Ajouter à l'historique
-        details = f"{loc}" if ttype == "T3" else ""
-        add_to_history(self.member.id, f"Ajout Trajet {ttype}", f"+{amount_to_add}€", details)
-
-        # Rafraîchir le panel et confirmer
-        new_embed = create_financial_embed(self.member)
-        await self.original_message.edit(embed=new_embed)
-        await interaction.followup.send(f"✅ Trajet **{ttype}** de **{amount_to_add}€** ajouté au solde de {self.member.display_name}.", ephemeral=True)
+        add_to_history(self.member.id, f"Ajout Trajet {ttype}", f"+{amount_to_add}€", loc if ttype == "T3" else "")
+        await self.original_message.edit(embed=create_financial_embed(self.member))
+        await interaction.followup.send(f"✅ Trajet **{ttype}** de **{amount_to_add}€** ajouté à {self.member.display_name}.", ephemeral=True)
 
 class FinancialPanelView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
     async def declare_trip_button(self, interaction: discord.Interaction, button: Button):
         embed = interaction.message.embeds[0]
         try:
-            user_id_str = embed.description.split('<@')[1].split('>')[0]
-            member = await interaction.guild.fetch_member(int(user_id_str))
-        except (IndexError, ValueError, discord.NotFound):
-            await interaction.response.send_message("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True); return
-        await interaction.response.send_modal(DeclareTripModal(member=member, original_message=interaction.message))
+            user_id = int(embed.description.split('<@')[1].split('>')[0])
+            member = await interaction.guild.fetch_member(user_id)
+        except (IndexError, ValueError, discord.NotFound): await interaction.response.send_message("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
+        await interaction.response.send_modal(DeclareTripModal(member, interaction.message))
 
     @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
     async def pay_button(self, interaction: discord.Interaction, button: Button):
-        patron_role = discord.utils.get(interaction.guild.roles, name="Patron")
-        copatron_role = discord.utils.get(interaction.guild.roles, name="Co-Patron")
-        if not (patron_role in interaction.user.roles or copatron_role in interaction.user.roles):
-            await interaction.response.send_message("❌ Vous n'avez pas la permission d'utiliser ce bouton.", ephemeral=True); return
-        
+        if not any(r.name in ["Patron", "Co-Patron"] for r in interaction.user.roles):
+            await interaction.response.send_message("❌ Vous n'avez pas la permission.", ephemeral=True); return
         await interaction.response.defer(ephemeral=True)
         embed = interaction.message.embeds[0]
         try:
-            user_id_str = embed.description.split('<@')[1].split('>')[0]
-            member = await interaction.guild.fetch_member(int(user_id_str))
-        except (IndexError, ValueError, discord.NotFound):
-            await interaction.followup.send("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True); return
+            user_id = int(embed.description.split('<@')[1].split('>')[0])
+            member = await interaction.guild.fetch_member(user_id)
+        except (IndexError, ValueError, discord.NotFound): await interaction.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
 
         finances = load_finances()
         member_id_str = str(member.id)
-        balance_before_payment = finances.get(member_id_str, {}).get("solde", 0)
-
-        if balance_before_payment <= 0:
-            await interaction.followup.send(f"ℹ️ Le solde de **{member.display_name}** est déjà à jour.", ephemeral=True); return
+        balance = finances.get(member_id_str, {}).get("solde", 0)
+        if balance <= 0: await interaction.followup.send(f"ℹ️ Le solde de **{member.display_name}** est déjà à jour.", ephemeral=True); return
 
         finances[member_id_str]["solde"] = 0
         save_finances(finances)
-        add_to_history(member.id, "Paiement", f"-{balance_before_payment}€", "Solde remis à zéro")
-
-        new_embed = create_financial_embed(member)
-        await interaction.message.edit(embed=new_embed)
+        add_to_history(member.id, "Paiement", f"-{balance}€", "Solde remis à zéro")
+        await interaction.message.edit(embed=create_financial_embed(member))
         await interaction.followup.send(f"✅ Le solde de **{member.display_name}** a été payé.", ephemeral=True)
 
     @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
@@ -614,25 +599,15 @@ class FinancialPanelView(View):
         await interaction.response.defer(ephemeral=True)
         embed = interaction.message.embeds[0]
         try:
-            user_id_str = embed.description.split('<@')[1].split('>')[0]
-            member = await interaction.guild.fetch_member(int(user_id_str))
-        except (IndexError, ValueError, discord.NotFound):
-            await interaction.followup.send("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True); return
+            user_id = int(embed.description.split('<@')[1].split('>')[0])
+            member = await interaction.guild.fetch_member(user_id)
+        except (IndexError, ValueError, discord.NotFound): await interaction.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
 
-        finances = load_finances()
-        history_data = finances.get(str(member.id), {}).get("history", [])
-        if not history_data:
-            await interaction.followup.send("ℹ️ Aucun historique de transaction pour cet employé.", ephemeral=True); return
+        history = load_finances().get(str(member.id), {}).get("history", [])
+        if not history: await interaction.followup.send("ℹ️ Aucun historique de transaction.", ephemeral=True); return
 
         history_embed = discord.Embed(title=f"📜 Historique de {member.display_name}", color=discord.Color.blue())
-        description = ""
-        for entry in history_data[:10]:
-            action = entry.get('action', 'N/A')
-            details = entry.get('details')
-            amount = entry.get('amount', 'N/A')
-            timestamp = entry.get('timestamp', 'N/A')
-            action_str = f"**{action}**" + (f" ({details})" if details else "")
-            description += f"`{timestamp}`\n{action_str} : `{amount}`\n\n"
+        description = "\n\n".join([f"`{e['timestamp']}`\n**{e['action']}**{(f' ({e['details']})' if e['details'] else '')} : `{e['amount']}`" for e in history[:10]])
         history_embed.description = description
         history_embed.set_footer(text="Affiche les 10 dernières opérations.")
         await interaction.followup.send(embed=history_embed, ephemeral=True)
@@ -641,15 +616,23 @@ class FinancialPanelView(View):
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer()
         embed = interaction.message.embeds[0]
-        if not embed.description or '<@' not in embed.description:
-            await interaction.followup.send("❌ Erreur : Impossible de trouver l'employé lié.", ephemeral=True); return
         try:
-            user_id_str = embed.description.split('<@')[1].split('>')[0]
-            member = await interaction.guild.fetch_member(int(user_id_str))
-        except (IndexError, ValueError, discord.NotFound):
-            await interaction.followup.send("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True); return
-        new_embed = create_financial_embed(member)
+            user_id = int(embed.description.split('<@')[1].split('>')[0])
+            member = await interaction.guild.fetch_member(user_id)
+        except (IndexError, ValueError, discord.NotFound): await interaction.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
+        await interaction.edit_original_response(embed=create_financial_embed(member))
+
+# --- NOUVELLE VIEW POUR LE PANEL RÉCAPITULATIF ---
+class BalancesSummaryView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.primary, custom_id="refresh_balances_summary", emoji="🔄")
+    async def refresh_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
+        new_embed = await create_balances_summary_embed(interaction.guild)
         await interaction.edit_original_response(embed=new_embed)
+
 
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
@@ -661,28 +644,17 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         category = discord.utils.get(interaction.guild.categories, id=PRIVATE_CHANNEL_CATEGORY_ID)
-        if not category:
-            await interaction.followup.send("❌ Erreur : La catégorie pour les salons privés est introuvable.", ephemeral=True); return
-            
-        try:
-            member = await interaction.guild.fetch_member(int(self.member_id.value))
-        except (ValueError, discord.NotFound):
-            await interaction.followup.send("❌ Erreur : ID de membre invalide ou membre introuvable.", ephemeral=True); return
+        if not category: await interaction.followup.send("❌ Erreur : Catégorie des salons privés introuvable.", ephemeral=True); return
+        try: member = await interaction.guild.fetch_member(int(self.member_id.value))
+        except (ValueError, discord.NotFound): await interaction.followup.send("❌ Erreur : ID de membre invalide ou membre introuvable.", ephemeral=True); return
 
-        first_name_clean = self.first_name.value.strip().lower()
-        last_name_clean = self.last_name.value.strip().lower()
-        channel_name = f"📁・{first_name_clean}-{last_name_clean}"
+        channel_name = f"📁・{self.first_name.value.strip().lower()}-{self.last_name.value.strip().lower()}"
         nickname = f"{self.first_name.value.strip().title()} {self.last_name.value.strip().title()}"
-
         if discord.utils.get(interaction.guild.text_channels, name=channel_name):
             await interaction.followup.send(f"⚠️ Un salon nommé `{channel_name}` existe déjà.", ephemeral=True); return
-
-        try:
-            await member.edit(nick=nickname)
-        except discord.Forbidden:
-            await interaction.followup.send(f"⚠️ Je n'ai pas la permission de renommer {member.display_name}.", ephemeral=True)
+        try: await member.edit(nick=nickname)
+        except discord.Forbidden: await interaction.followup.send(f"⚠️ Je n'ai pas la permission de renommer {member.display_name}.", ephemeral=True)
         
         patron_role = discord.utils.get(interaction.guild.roles, name="Patron")
         co_patron_role = discord.utils.get(interaction.guild.roles, name="Co-Patron")
@@ -696,32 +668,18 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
-            
-            welcome_embed = discord.Embed(
-                title=f"Bienvenue {nickname} !",
-                description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.\n\nN'hésitez pas à utiliser cet espace pour toute question ou demande. Nous restons à votre écoute.",
-                color=discord.Color.blue()
-            )
-            if member.joined_at:
-                welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
+            welcome_embed = discord.Embed(title=f"Bienvenue {nickname} !", description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.\n\nN'hésitez pas à utiliser cet espace pour toute question ou demande.", color=discord.Color.blue())
+            if member.joined_at: welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
             welcome_embed.set_thumbnail(url=member.display_avatar.url)
             await new_channel.send(embed=welcome_embed)
-
-            financial_embed = create_financial_embed(member)
-            await new_channel.send(embed=financial_embed, view=FinancialPanelView())
-
+            await new_channel.send(embed=create_financial_embed(member), view=FinancialPanelView())
             await interaction.followup.send(f"✅ Salon {new_channel.mention} créé et {member.display_name} renommé avec succès.", ephemeral=True)
-
-        except discord.Forbidden:
-            await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
+        except discord.Forbidden: await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
 
 class OpenChannelInitView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-    
+    def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary, custom_id="create_private_channel_btn")
-    async def open_modal_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(OpenChannelModal())
+    async def open_modal_button(self, interaction: discord.Interaction, button: Button): await interaction.response.send_modal(OpenChannelModal())
 
 # =================================================================================
 # SECTION 9 : COMMANDE SETUP POUR RAFRAÎCHIR LES PANNEAUX
@@ -730,73 +688,43 @@ class OpenChannelInitView(View):
 @commands.has_any_role("Patron", "Co-Patron")
 async def setup_panels(ctx):
     """Met à jour ou crée les panneaux d'information principaux."""
-    try:
-        await ctx.message.delete()
-    except (discord.Forbidden, discord.NotFound):
-        pass 
-    
+    try: await ctx.message.delete()
+    except (discord.Forbidden, discord.NotFound): pass 
     msg = await ctx.send(" Mise à jour des panneaux en cours...", delete_after=10)
 
-    # Dictionnaire des panneaux à gérer
     panels = {
-        "annuaire": {
-            "channel_id": ANNUAIRE_CHANNEL_ID,
-            "title": "📞 Annuaire Téléphonique",
-            "embed_coro": lambda guild: create_annuaire_embed(guild),
-            "view": AnnuaireView()
-        },
-        "absence": {
-            "channel_id": ABSENCE_CHANNEL_ID,
-            "title": "Gestion des Absences",
-            "embed": discord.Embed(title="Gestion des Absences", description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.", color=discord.Color.dark_grey()),
-            "view": AbsenceView()
-        },
-        "annonce": {
-            "channel_id": ANNOUNCEMENT_CHANNEL_ID,
-            "title": "Panneau des Annonces Internes",
-            "embed": discord.Embed(title="Panneau des Annonces Internes", description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.", color=discord.Color.dark_blue()),
-            "view": AnnonceView()
-        },
-        "management": {
-            "channel_id": MANAGEMENT_CHANNEL_ID,
-            "title": "Panneau de Gestion des Employés",
-            "embed": discord.Embed(title="Panneau de Gestion des Employés", description="Utilisez le bouton ci-dessous pour créer un nouveau dossier (salon privé) pour un employé.", color=discord.Color.dark_red()),
-            "view": OpenChannelInitView()
-        }
+        "annuaire": {"channel_id": ANNUAIRE_CHANNEL_ID, "title": "📞 Annuaire Téléphonique", "embed_coro": create_annuaire_embed, "view": AnnuaireView()},
+        "absence": {"channel_id": ABSENCE_CHANNEL_ID, "title": "Gestion des Absences", "embed": discord.Embed(title="Gestion des Absences", description="Cliquez ci-dessous pour déclarer une absence.", color=discord.Color.dark_grey()), "view": AbsenceView()},
+        "annonce": {"channel_id": ANNOUNCEMENT_CHANNEL_ID, "title": "Panneau des Annonces Internes", "embed": discord.Embed(title="Panneau des Annonces Internes", description="Cliquez ci-dessous pour rédiger une annonce.", color=discord.Color.dark_blue()), "view": AnnonceView()},
+        "management": {"channel_id": MANAGEMENT_CHANNEL_ID, "title": "Panneau de Gestion des Employés", "embed": discord.Embed(title="Panneau de Gestion des Employés", description="Utilisez le bouton pour créer un dossier employé.", color=discord.Color.dark_red()), "view": OpenChannelInitView()},
+        "balances_summary": {"channel_id": BALANCES_SUMMARY_CHANNEL_ID, "title": "📊 Récapitulatif des Soldes", "embed_coro": create_balances_summary_embed, "view": BalancesSummaryView()}
     }
 
-    for panel_name, config in panels.items():
+    for name, config in panels.items():
         channel = bot.get_channel(config["channel_id"])
         if not channel:
-            print(f"WARN: Salon pour le panneau '{panel_name}' non trouvé (ID: {config['channel_id']})")
-            continue
-
+            print(f"WARN: Salon pour '{name}' introuvable (ID: {config['channel_id']})"); continue
         embed_content = await config["embed_coro"](ctx.guild) if config.get("embed_coro") else config["embed"]
-        
         try:
             found = False
             async for message in channel.history(limit=50):
                 if message.author == bot.user and message.embeds and message.embeds[0].title == config["title"]:
-                    await message.edit(embed=embed_content, view=config["view"])
-                    found = True
-                    break
-            if not found:
-                await channel.send(embed=embed_content, view=config["view"])
-        except discord.Forbidden:
-            print(f"ERREUR: Permissions manquantes dans le salon '{channel.name}' pour le panneau '{panel_name}'.")
-        except Exception as e:
-            print(f"ERREUR lors de la mise à jour du panneau '{panel_name}': {e}")
+                    await message.edit(embed=embed_content, view=config["view"]); found = True; break
+            if not found: await channel.send(embed=embed_content, view=config["view"])
+        except discord.Forbidden: print(f"ERREUR: Permissions manquantes dans '{channel.name}' pour '{name}'.")
+        except Exception as e: print(f"ERREUR lors de la mise à jour de '{name}': {e}")
             
     await msg.edit(content="✅ Panneaux principaux mis à jour !", delete_after=5)
 
-
 @setup_panels.error
 async def setup_panels_error(ctx, error):
+    try: await ctx.message.delete()
+    except: pass
     if isinstance(error, commands.MissingAnyRole):
-        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", delete_after=10)
+        await ctx.send("❌ Vous n'avez pas la permission.", delete_after=10)
     else:
         print(f"Erreur commande !setup: {error}")
-        await ctx.send(f"❌ Une erreur est survenue lors du setup : {error}", delete_after=10)
+        await ctx.send(f"❌ Erreur lors du setup : {error}", delete_after=10)
 
 # =================================================================================
 # SECTION 10 : GESTION GÉNÉRALE DU BOT
@@ -811,6 +739,7 @@ async def on_ready():
     bot.add_view(AnnonceView())
     bot.add_view(OpenChannelInitView())
     bot.add_view(FinancialPanelView())
+    bot.add_view(BalancesSummaryView()) # <-- NOUVEAU
 
 # --- Lancement du bot ---
 if TOKEN:
