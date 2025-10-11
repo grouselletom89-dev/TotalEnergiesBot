@@ -141,7 +141,11 @@ def load_locations():
 def save_locations(data):
     with open(LOCATIONS_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 def get_default_locations():
-    default_data = {"stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},"aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}}
+    default_data = {
+        "stations": {"Station de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 3": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Station de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}, "Pompe 2": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
+        "ports": {"Port de Lampaul": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}, "Port de Ligoudou": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"gazole": 0, "sp95": 0, "sp98": 0}}}},
+        "aeroport": {"Aéroport": {"image_url": "","last_updated": "N/A", "pumps": {"Pompe 1": {"kerosene": 0}}}}
+    }
     save_locations(default_data); return default_data
 def create_locations_embeds():
     data = load_locations()
@@ -482,7 +486,6 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
             
-            # --- Envoi des messages dans le nouveau salon ---
             welcome_embed = discord.Embed(title=f"Bienvenue dans votre salon privé, {member.display_name} !", description=f"N'hésitez pas à utiliser ce salon pour poser vos questions, signaler un problème ou faire une demande.\nLa direction reste à votre écoute et disponible pour vous accompagner.", color=0x7289da)
             welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
             await new_channel.send(embed=welcome_embed)
@@ -509,7 +512,7 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
 class OpenChannelInitView(View):
     def __init__(self):
         super().__init__(timeout=None)
-    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary, custom_id="open_private_channel")
     async def open_modal_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(OpenChannelModal())
 
