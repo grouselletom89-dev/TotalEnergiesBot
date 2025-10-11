@@ -485,7 +485,6 @@ def create_financial_embed(member: discord.Member):
         description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*",
         color=embed_color
     )
-    financial_embed.set_thumbnail(url="https://i.imgur.com/GgGfB9n.png") # URL mise à jour
     
     financial_embed.add_field(
         name="🧾 Solde Actuel",
@@ -697,39 +696,34 @@ class OpenChannelInitView(View):
 # SECTION 9 : COMMANDE SETUP POUR RAFRAÎCHIR LES PANNEAUX
 # =================================================================================
 async def find_and_update_panel(channel, embed_title, new_embed=None, new_embed_coro=None, new_view=None, guild=None):
-    """Helper: Finds and updates a panel message, or creates a new one."""
+    """Helper: Trouve et met à jour un panneau, ou en crée un nouveau."""
     if not channel:
-        print(f"WARN: Channel for '{embed_title}' not found or configured.")
+        print(f"WARN: Le salon pour '{embed_title}' n'a pas été trouvé ou configuré.")
         return
 
-    # 1. Prepare the content first
-    final_embed = None
-    if new_embed_coro:
-        final_embed = await new_embed_coro(guild)
-    else:
-        final_embed = new_embed
-
+    final_embed = await new_embed_coro(guild) if new_embed_coro else new_embed
     try:
-        # 2. Try to find and edit an existing message
         async for msg in channel.history(limit=50):
             if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed_title:
                 await msg.edit(embed=final_embed, view=new_view)
-                return # Success, we're done
-
-        # 3. If no message was found, send a new one
+                return
         await channel.send(embed=final_embed, view=new_view)
-
     except discord.Forbidden:
-        print(f"ERROR: Missing permissions to read history or send messages in channel: {channel.name}")
+        print(f"ERREUR: Permissions manquantes pour lire/envoyer des messages dans le salon : {channel.name}")
     except Exception as e:
-        print(f"An unexpected error occurred in find_and_update_panel for '{embed_title}': {e}")
+        print(f"Une erreur est survenue dans find_and_update_panel pour '{embed_title}': {e}")
 
 @bot.command(name="setup")
 @commands.has_any_role("Patron", "Co-Patron")
 async def setup_panels(ctx):
     """Met à jour ou crée les panneaux d'information principaux."""
-    await ctx.response.defer(ephemeral=True, thinking=True)
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        pass # Pas grave si on ne peut pas supprimer le message
     
+    msg = await ctx.send(" Mise à jour des panneaux en cours...", ephemeral=True)
+
     # Annuaire
     await find_and_update_panel(
         channel=bot.get_channel(ANNUAIRE_CHANNEL_ID),
@@ -757,7 +751,7 @@ async def setup_panels(ctx):
         new_view=AnnonceView()
     )
 
-    # Panneau de Management (avec le bouton pour créer un salon)
+    # Panneau de Management
     embed_mng = discord.Embed(
         title="Panneau de Gestion des Employés",
         description="Utilisez le bouton ci-dessous pour créer un nouveau dossier (salon privé) pour un employé.",
@@ -770,7 +764,7 @@ async def setup_panels(ctx):
         new_view=OpenChannelInitView()
     )
         
-    await ctx.followup.send("✅ Panneaux principaux mis à jour !", ephemeral=True)
+    await msg.edit(content="✅ Panneaux principaux mis à jour !", delete_after=10)
 
 @setup_panels.error
 async def setup_panels_error(ctx, error):
