@@ -541,13 +541,14 @@ def create_financial_embed(member: discord.Member):
     embed_color = discord.Color.red() if solde > 0 else discord.Color.green()
     solde_message = f"🔴 Votre solde est de **{solde_formatted} €**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted} €**."
     
-    financial_embed = discord.Embed(
-        title="💰 Panel de Gestion Financière",
-        description=f"Panneau de suivi des transactions.\n*Employé lié : {member.mention}*",
-        color=embed_color
-    )
+    financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*", color=embed_color)
     financial_embed.add_field(name="🧾 Solde Actuel", value=solde_message, inline=False)
-    actions_text = "🚢 **Déclarer un trajet**\n💸 **Payer**\n➖ **Retirer un montant**\n📜 **Historique**"
+    actions_text = (
+        "🚢 **Déclarer un trajet** : T1 / T2 / T3\n"
+        "💸 **Payer** : réservé patron/co-patron\n"
+        "➖ **Retirer un montant**\n"
+        "📜 **Historique** : voir les 10 dernières opérations"
+    )
     financial_embed.add_field(name="🛠️ Actions Disponibles", value=actions_text, inline=False)
     financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
     return financial_embed
@@ -679,7 +680,6 @@ class FinancialPanelView(View):
         await i.edit_original_response(embed=create_financial_embed(member))
 class BalancesSummaryView(View):
     def __init__(self): super().__init__(timeout=None)
-
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
 # =================================================================================
