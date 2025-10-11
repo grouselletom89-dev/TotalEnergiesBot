@@ -485,17 +485,17 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         except discord.Forbidden:
             await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
 
+class OpenChannelInitView(View):
+    def __init__(self):
+        super().__init__(timeout=None) # Bouton permanent
+    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary, custom_id="open_private_channel")
+    async def open_modal_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(OpenChannelModal())
+
 @bot.command(name="open")
 @commands.has_any_role("Patron", "Co-Patron")
 async def open_channel(ctx):
     await ctx.send("Cliquez sur le bouton pour ouvrir le formulaire de création de salon.", view=OpenChannelInitView(), ephemeral=True)
-
-class OpenChannelInitView(View):
-    def __init__(self):
-        super().__init__(timeout=60)
-    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary)
-    async def open_modal_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(OpenChannelModal())
 
 @open_channel.error
 async def open_channel_error(ctx, error):
@@ -517,6 +517,7 @@ async def on_ready():
     bot.add_view(AnnuaireView())
     bot.add_view(AbsenceView())
     bot.add_view(AnnonceView())
+    bot.add_view(OpenChannelInitView()) # Ajout de la nouvelle vue
 
 # --- Lancement du bot ---
 if TOKEN:
