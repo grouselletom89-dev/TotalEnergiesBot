@@ -556,7 +556,7 @@ async def create_balances_summary_embed(guild: discord.Guild):
     for member_id, data in finances.items():
         try: member_name = (await guild.fetch_member(int(member_id))).display_name
         except (discord.NotFound, ValueError): member_name = f"Utilisateur Inconnu ({member_id})"
-        balance_lines.append(f"• {member_name} → **`{data.get('solde', 0):,.2f} €`.replace(',', ' ')`**")
+        balance_lines.append(f"• {member_name} → **`{data.get('solde', 0):,.2f}`.replace(',', ' ') €**")
     embed.description = "\n".join(balance_lines) if balance_lines else "Aucun employé n'a de solde."
     embed.add_field(name="Total à Payer", value=f"💸 **`{total_due:,.2f} €`.replace(',', ' ')`**", inline=False)
     embed.set_footer(text=f"Dernière mise à jour le {format_paris_time(get_paris_time())}")
