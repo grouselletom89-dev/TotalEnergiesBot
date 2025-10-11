@@ -480,10 +480,8 @@ def load_recap_status():
     try:
         with open(RECAP_STATUS_PATH, "r") as f: return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError): return {"last_sent_week": 0}
-
 def save_recap_status(data):
     with open(RECAP_STATUS_PATH, "w") as f: json.dump(data, f, indent=4)
-
 async def log_finance_change(interaction: discord.Interaction, member: discord.Member, action_type: str, amount: str, details: str):
     log_channel = bot.get_channel(FINANCE_LOG_CHANNEL_ID)
     if not log_channel: return
@@ -496,15 +494,12 @@ async def log_finance_change(interaction: discord.Interaction, member: discord.M
     embed.set_footer(text=f"ID Auteur: {interaction.user.id} | ID Employé: {member.id}")
     try: await log_channel.send(embed=embed)
     except discord.Forbidden: print(f"ERREUR: Permissions manquantes pour les logs financiers.")
-
 def load_finances():
     try:
         with open(FINANCES_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError): return {}
-
 def save_finances(data):
     with open(FINANCES_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
-
 def add_to_history(member_id: int, action: str, amount_str: str, details: str = ""):
     finances = load_finances()
     member_id_str = str(member_id)
@@ -514,7 +509,6 @@ def add_to_history(member_id: int, action: str, amount_str: str, details: str = 
     finances[member_id_str]["history"].insert(0, log_entry)
     finances[member_id_str]["history"] = finances[member_id_str]["history"][:15]
     save_finances(finances)
-
 async def update_summary_panels():
     channel = bot.get_channel(BALANCES_SUMMARY_CHANNEL_ID)
     if not channel: return
@@ -609,7 +603,6 @@ class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
         await self.original_message.edit(embed=create_financial_embed(self.member))
         await update_summary_panels()
         await interaction.followup.send(f"✅ Trajet **{ttype}** de **{amount_to_add}€** ajouté à {self.member.display_name}.", ephemeral=True)
-
 class RemoveAmountModal(Modal, title="Retirer un Montant"):
     def __init__(self, member: discord.Member, original_message: discord.Message):
         super().__init__(); self.member, self.original_message = member, original_message
@@ -629,7 +622,6 @@ class RemoveAmountModal(Modal, title="Retirer un Montant"):
         await self.original_message.edit(embed=create_financial_embed(self.member))
         await update_summary_panels()
         await interaction.followup.send(f"✅ Montant de **{amount_to_remove}€** retiré du solde de {self.member.display_name}.", ephemeral=True)
-
 class FinancialPanelView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
@@ -676,7 +668,6 @@ class FinancialPanelView(View):
         await i.edit_original_response(embed=create_financial_embed(member))
 class BalancesSummaryView(View):
     def __init__(self): super().__init__(timeout=None)
-
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
 # =================================================================================
