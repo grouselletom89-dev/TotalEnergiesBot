@@ -26,7 +26,7 @@ PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
 ANNUAIRE_PATH = "/data/annuaire.json"
-FINANCES_PATH = "/data/finances.json" # Nouveau fichier pour les finances
+FINANCES_PATH = "/data/finances.json"
 
 def get_paris_time():
     paris_tz = pytz.timezone("Europe/Paris")
@@ -445,7 +445,8 @@ async def annonce_error(ctx, error):
         await ctx.send("❌ Une erreur est survenue lors de l'exécution de la commande."); print(f"Erreur commande !annonce: {error}")
 
 
-# --- NOUVEAU : SECTION 7 : LOGIQUE POUR LE PANEL FINANCIER ---
+# =================================================================================
+# SECTION 7 : LOGIQUE POUR LE PANEL FINANCIER
 # =================================================================================
 
 def load_finances():
@@ -458,6 +459,48 @@ def load_finances():
 def save_finances(data):
     with open(FINANCES_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+def create_financial_embed(member: discord.Member):
+    """Crée et retourne l'embed du panel financier pour un membre donné."""
+    finances = load_finances()
+    member_id_str = str(member.id)
+    
+    # S'assurer que l'utilisateur a une entrée, au cas où.
+    if member_id_str not in finances:
+        finances[member_id_str] = {"solde": 0}
+        save_finances(finances)
+
+    solde = finances[member_id_str].get('solde', 0)
+    solde_formatted = f"{solde:,.2f} €".replace(',', ' ')
+
+    # Définir la couleur et le message en fonction du solde
+    if solde > 0:
+        embed_color = discord.Color.red()
+        solde_message = f"🔴 Vous avez un solde à régler de **{solde_formatted}**."
+    else:
+        embed_color = discord.Color.green()
+        solde_message = "🟢 Votre solde est à jour. Merci !"
+
+    financial_embed = discord.Embed(
+        title="💰 Panel de Gestion Financière",
+        description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*",
+        color=embed_color
+    )
+    financial_embed.set_thumbnail(url="https://i.imgur.com/v8S3aQv.png")
+    
+    financial_embed.add_field(
+        name="🧾 Solde Actuel",
+        value=solde_message,
+        inline=False
+    )
+    financial_embed.add_field(
+        name="🛠️ Actions Disponibles",
+        value="Utilisez les boutons ci-dessous pour gérer vos finances.",
+        inline=False
+    )
+    financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
+    
+    return financial_embed
 
 class FinancialPanelView(View):
     def __init__(self):
@@ -474,6 +517,24 @@ class FinancialPanelView(View):
     @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
     async def history_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
+    
+    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_financial_panel", emoji="🔄")
+    async def refresh_button(self, interaction: discord.Interaction, button: Button):
+        embed = interaction.message.embeds[0]
+        if not embed.description or '<@' not in embed.description:
+            await interaction.response.send_message("❌ Erreur : Impossible de trouver l'employé lié à ce panel.", ephemeral=True)
+            return
+
+        try:
+            user_id_str = embed.description.split('<@')[1].split('>')[0]
+            user_id = int(user_id_str)
+            member = await interaction.guild.fetch_member(user_id)
+        except (IndexError, ValueError, discord.NotFound):
+            await interaction.response.send_message("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
+            return
+
+        new_embed = create_financial_embed(member)
+        await interaction.response.edit_message(embed=new_embed)
 
 
 # =================================================================================
@@ -522,31 +583,19 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
             
-            # --- MODIFIÉ : Envoi des messages de bienvenue et du panel financier ---
-            
             # Message de bienvenue
             welcome_embed = discord.Embed(
-                title="Bienvenue dans votre salon privé avec la direction !",
-                description=f"Bienvenue {member.mention} dans votre salon privé !\nN'hésitez pas à utiliser ce salon pour poser vos questions, signaler un problème ou faire une demande.\nLa direction reste à votre écoute et disponible pour vous accompagner.",
+                title=f"Bienvenue {nickname} !",
+                description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.\n\nN'hésitez pas à utiliser cet espace pour toute question ou demande. Nous restons à votre écoute.",
                 color=discord.Color.blue()
             )
-            welcome_embed.add_field(name="Recruté le", value=discord.utils.format_dt(member.joined_at, style='F'))
+            if member.joined_at:
+                welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
+            welcome_embed.set_thumbnail(url=member.display_avatar.url)
             await new_channel.send(embed=welcome_embed)
 
-            # Crée une entrée pour le membre dans les finances s'il n'existe pas
-            finances = load_finances()
-            member_id_str = str(member.id)
-            if member_id_str not in finances:
-                finances[member_id_str] = {"solde": 0}
-                save_finances(finances)
-
-            # Panel Financier
-            financial_embed = discord.Embed(title="Panel Financier", color=discord.Color.dark_purple())
-            financial_embed.add_field(name="Solde à payer", value=f"`{finances[member_id_str].get('solde', 0)}€`", inline=False)
-            financial_embed.add_field(name="Déclarer un trajet", value="T1 / T2 / T3", inline=False)
-            financial_embed.add_field(name="Payer", value="réservé patron/co-patron", inline=False)
-            financial_embed.add_field(name="Historique", value="voir les 10 dernières opérations", inline=False)
-            financial_embed.add_field(name="Employé lié", value=member.mention, inline=False)
+            # Utilisation de la nouvelle fonction pour créer le panel financier
+            financial_embed = create_financial_embed(member)
             await new_channel.send(embed=financial_embed, view=FinancialPanelView())
 
             await interaction.followup.send(f"✅ Salon {new_channel.mention} créé et {member.display_name} renommé avec succès.", ephemeral=True)
@@ -587,7 +636,7 @@ async def on_ready():
     bot.add_view(AbsenceView())
     bot.add_view(AnnonceView())
     bot.add_view(OpenChannelInitView())
-    bot.add_view(FinancialPanelView()) # Ajout de la nouvelle vue
+    bot.add_view(FinancialPanelView())
 
 # --- Lancement du bot ---
 if TOKEN:
