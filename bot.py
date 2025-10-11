@@ -480,8 +480,10 @@ def load_recap_status():
     try:
         with open(RECAP_STATUS_PATH, "r") as f: return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError): return {"last_sent_week": 0}
+
 def save_recap_status(data):
     with open(RECAP_STATUS_PATH, "w") as f: json.dump(data, f, indent=4)
+
 async def log_finance_change(interaction: discord.Interaction, member: discord.Member, action_type: str, amount: str, details: str):
     log_channel = bot.get_channel(FINANCE_LOG_CHANNEL_ID)
     if not log_channel: return
@@ -494,12 +496,15 @@ async def log_finance_change(interaction: discord.Interaction, member: discord.M
     embed.set_footer(text=f"ID Auteur: {interaction.user.id} | ID Employé: {member.id}")
     try: await log_channel.send(embed=embed)
     except discord.Forbidden: print(f"ERREUR: Permissions manquantes pour les logs financiers.")
+
 def load_finances():
     try:
         with open(FINANCES_PATH, "r", encoding="utf-8") as f: return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError): return {}
+
 def save_finances(data):
     with open(FINANCES_PATH, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
+
 def add_to_history(member_id: int, action: str, amount_str: str, details: str = ""):
     finances = load_finances()
     member_id_str = str(member_id)
@@ -509,6 +514,7 @@ def add_to_history(member_id: int, action: str, amount_str: str, details: str = 
     finances[member_id_str]["history"].insert(0, log_entry)
     finances[member_id_str]["history"] = finances[member_id_str]["history"][:15]
     save_finances(finances)
+
 async def update_summary_panels():
     channel = bot.get_channel(BALANCES_SUMMARY_CHANNEL_ID)
     if not channel: return
@@ -534,7 +540,12 @@ def create_financial_embed(member: discord.Member):
     solde_formatted = f"{solde:,.2f}".replace(',', ' ')
     embed_color = discord.Color.red() if solde > 0 else discord.Color.green()
     solde_message = f"🔴 Votre solde est de **{solde_formatted} €**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted} €**."
-    financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Panneau de suivi des transactions.\n*Employé lié : {member.mention}*", color=embed_color)
+    
+    financial_embed = discord.Embed(
+        title="💰 Panel de Gestion Financière",
+        description=f"Panneau de suivi des transactions.\n*Employé lié : {member.mention}*",
+        color=embed_color
+    )
     financial_embed.add_field(name="🧾 Solde Actuel", value=solde_message, inline=False)
     actions_text = "🚢 **Déclarer un trajet**\n💸 **Payer**\n➖ **Retirer un montant**\n📜 **Historique**"
     financial_embed.add_field(name="🛠️ Actions Disponibles", value=actions_text, inline=False)
@@ -668,6 +679,7 @@ class FinancialPanelView(View):
         await i.edit_original_response(embed=create_financial_embed(member))
 class BalancesSummaryView(View):
     def __init__(self): super().__init__(timeout=None)
+
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
 # =================================================================================
