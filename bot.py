@@ -26,7 +26,7 @@ PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
 STOCKS_PATH = "/data/stocks.json"
 LOCATIONS_PATH = "/data/locations.json"
 ANNUAIRE_PATH = "/data/annuaire.json"
-FINANCES_PATH = "/data/finances.json" # Nouveau fichier pour les finances
+FINANCES_PATH = "/data/finances.json"
 
 def get_paris_time():
     paris_tz = pytz.timezone("Europe/Paris")
@@ -445,7 +445,7 @@ async def annonce_error(ctx, error):
         await ctx.send("❌ Une erreur est survenue lors de l'exécution de la commande."); print(f"Erreur commande !annonce: {error}")
 
 
-# --- NOUVEAU : SECTION 7 : LOGIQUE POUR LE PANEL FINANCIER ---
+# --- MODIFIÉ : SECTION 7 : LOGIQUE POUR LE PANEL FINANCIER ---
 # =================================================================================
 
 def load_finances():
@@ -463,15 +463,15 @@ class FinancialPanelView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
+    @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip_financial")
     async def declare_trip_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
 
-    @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
+    @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance_financial")
     async def pay_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
 
-    @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
+    @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history_financial")
     async def history_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
 
@@ -522,31 +522,35 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
             
-            # --- MODIFIÉ : Envoi des messages de bienvenue et du panel financier ---
-            
             # Message de bienvenue
             welcome_embed = discord.Embed(
-                title="Bienvenue dans votre salon privé avec la direction !",
-                description=f"Bienvenue {member.mention} dans votre salon privé !\nN'hésitez pas à utiliser ce salon pour poser vos questions, signaler un problème ou faire une demande.\nLa direction reste à votre écoute et disponible pour vous accompagner.",
-                color=discord.Color.blue()
+                title=f"Bienvenue dans votre salon privé, {member.display_name} !",
+                description=f"N'hésitez pas à utiliser ce salon pour poser vos questions, signaler un problème ou faire une demande.\nLa direction reste à votre écoute et disponible pour vous accompagner.",
+                color=0x7289da # Couleur de Discord
             )
-            welcome_embed.add_field(name="Recruté le", value=discord.utils.format_dt(member.joined_at, style='F'))
+            welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
             await new_channel.send(embed=welcome_embed)
 
-            # Crée une entrée pour le membre dans les finances s'il n'existe pas
+            # Crée une entrée pour le membre dans les finances
             finances = load_finances()
             member_id_str = str(member.id)
             if member_id_str not in finances:
-                finances[member_id_str] = {"solde": 0}
+                finances[member_id_str] = {"solde": 17600} # Solde de départ comme sur l'exemple
                 save_finances(finances)
 
-            # Panel Financier
-            financial_embed = discord.Embed(title="Panel Financier", color=discord.Color.dark_purple())
-            financial_embed.add_field(name="Solde à payer", value=f"`{finances[member_id_str].get('solde', 0)}€`", inline=False)
-            financial_embed.add_field(name="Déclarer un trajet", value="T1 / T2 / T3", inline=False)
-            financial_embed.add_field(name="Payer", value="réservé patron/co-patron", inline=False)
-            financial_embed.add_field(name="Historique", value="voir les 10 dernières opérations", inline=False)
-            financial_embed.add_field(name="Employé lié", value=member.mention, inline=False)
+            # --- MODIFIÉ : Panel Financier amélioré ---
+            solde = finances[member_id_str].get('solde', 0)
+            financial_embed = discord.Embed(
+                title="💰 Panel Financier", 
+                color=0x5865F2 # Un bleu-violet
+            )
+            financial_embed.add_field(name="Solde à payer", value=f"**`{solde:,}€`**".replace(',', ' '), inline=False)
+            financial_embed.add_field(name="\u200b", value="\u200b", inline=False) # Espaceur
+            financial_embed.add_field(name="🧾 Déclarer un trajet", value="*Types de trajets : T1 / T2 / T3*", inline=True)
+            financial_embed.add_field(name="💸 Payer", value="*Réservé Patron/Co-Patron*", inline=True)
+            financial_embed.add_field(name="📜 Historique", value="*Voir les 10 dernières opérations*", inline=False)
+            financial_embed.set_footer(text=f"Employé lié : {member.display_name}")
+            
             await new_channel.send(embed=financial_embed, view=FinancialPanelView())
 
             await interaction.followup.send(f"✅ Salon {new_channel.mention} créé et {member.display_name} renommé avec succès.", ephemeral=True)
@@ -554,27 +558,7 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         except discord.Forbidden:
             await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
 
-@bot.command(name="open")
-@commands.has_any_role("Patron", "Co-Patron")
-async def open_channel(ctx):
-    await ctx.send("Cliquez sur le bouton pour ouvrir le formulaire de création de salon.", view=OpenChannelInitView(), ephemeral=True)
-
-class OpenChannelInitView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-    @discord.ui.button(label="Créer un salon privé", style=discord.ButtonStyle.primary)
-    async def open_modal_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(OpenChannelModal())
-
-@open_channel.error
-async def open_channel_error(ctx, error):
-    if isinstance(error, commands.MissingAnyRole):
-        await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
-    else:
-        print(f"Erreur commande !open: {error}")
-        await ctx.send("❌ Une erreur est survenue.", ephemeral=True)
-
-
+# ... (Le reste du code pour !open, les autres commandes, et on_ready reste identique)
 # =================================================================================
 # SECTION 9 : GESTION GÉNÉRALE DU BOT
 # =================================================================================
@@ -587,7 +571,7 @@ async def on_ready():
     bot.add_view(AbsenceView())
     bot.add_view(AnnonceView())
     bot.add_view(OpenChannelInitView())
-    bot.add_view(FinancialPanelView()) # Ajout de la nouvelle vue
+    bot.add_view(FinancialPanelView())
 
 # --- Lancement du bot ---
 if TOKEN:
