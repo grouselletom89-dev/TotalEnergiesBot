@@ -21,7 +21,7 @@ ABSENCE_CHANNEL_ID = 1420794939565936744
 RADIO_FREQUENCY = "367.6 Mhz"
 ANNOUNCEMENT_CHANNEL_ID = 1420794935975870574
 PRIVATE_CHANNEL_CATEGORY_ID = 1420794939565936749
-MANAGEMENT_CHANNEL_ID = 1426356300429918289 # ID du salon de management mis à jour
+MANAGEMENT_CHANNEL_ID = 1426356300429918289 # ID du salon de management
 
 # --- CHEMINS VERS LES FICHIERS DE DONNÉES ---
 STOCKS_PATH = "/data/stocks.json"
@@ -485,7 +485,7 @@ def create_financial_embed(member: discord.Member):
         description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*",
         color=embed_color
     )
-    financial_embed.set_thumbnail(url="https://i.imgur.com/v8S3aQv.png")
+    financial_embed.set_thumbnail(url="https://i.imgur.com/GgGfB9n.png") # URL mise à jour
     
     financial_embed.add_field(
         name="🧾 Solde Actuel",
@@ -697,18 +697,32 @@ class OpenChannelInitView(View):
 # SECTION 9 : COMMANDE SETUP POUR RAFRAÎCHIR LES PANNEAUX
 # =================================================================================
 async def find_and_update_panel(channel, embed_title, new_embed=None, new_embed_coro=None, new_view=None, guild=None):
-    """Helper: Trouve le message d'un panel et le met à jour, ou en crée un nouveau."""
+    """Helper: Finds and updates a panel message, or creates a new one."""
+    if not channel:
+        print(f"WARN: Channel for '{embed_title}' not found or configured.")
+        return
+
+    # 1. Prepare the content first
+    final_embed = None
+    if new_embed_coro:
+        final_embed = await new_embed_coro(guild)
+    else:
+        final_embed = new_embed
+
     try:
+        # 2. Try to find and edit an existing message
         async for msg in channel.history(limit=50):
             if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed_title:
-                if new_embed_coro: new_embed = await new_embed_coro(guild)
-                await msg.edit(embed=new_embed, view=new_view)
-                return
-    except (discord.Forbidden, discord.HTTPException):
-        pass
+                await msg.edit(embed=final_embed, view=new_view)
+                return # Success, we're done
 
-    if new_embed_coro: new_embed = await new_embed_coro(guild)
-    await channel.send(embed=new_embed, view=new_view)
+        # 3. If no message was found, send a new one
+        await channel.send(embed=final_embed, view=new_view)
+
+    except discord.Forbidden:
+        print(f"ERROR: Missing permissions to read history or send messages in channel: {channel.name}")
+    except Exception as e:
+        print(f"An unexpected error occurred in find_and_update_panel for '{embed_title}': {e}")
 
 @bot.command(name="setup")
 @commands.has_any_role("Patron", "Co-Patron")
@@ -717,52 +731,44 @@ async def setup_panels(ctx):
     await ctx.response.defer(ephemeral=True, thinking=True)
     
     # Annuaire
-    annuaire_channel = bot.get_channel(ANNUAIRE_CHANNEL_ID)
-    if annuaire_channel:
-        await find_and_update_panel(
-            channel=annuaire_channel,
-            embed_title="📞 Annuaire Téléphonique",
-            new_embed_coro=create_annuaire_embed,
-            new_view=AnnuaireView(),
-            guild=ctx.guild
-        )
+    await find_and_update_panel(
+        channel=bot.get_channel(ANNUAIRE_CHANNEL_ID),
+        embed_title="📞 Annuaire Téléphonique",
+        new_embed_coro=create_annuaire_embed,
+        new_view=AnnuaireView(),
+        guild=ctx.guild
+    )
 
     # Absences
-    absence_channel = bot.get_channel(ABSENCE_CHANNEL_ID)
-    if absence_channel:
-        embed = discord.Embed(title="Gestion des Absences", description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.", color=discord.Color.dark_grey())
-        await find_and_update_panel(
-            channel=absence_channel,
-            embed_title="Gestion des Absences",
-            new_embed=embed,
-            new_view=AbsenceView()
-        )
+    embed_abs = discord.Embed(title="Gestion des Absences", description="Clique sur le bouton ci-dessous pour déclarer une nouvelle absence.", color=discord.Color.dark_grey())
+    await find_and_update_panel(
+        channel=bot.get_channel(ABSENCE_CHANNEL_ID),
+        embed_title="Gestion des Absences",
+        new_embed=embed_abs,
+        new_view=AbsenceView()
+    )
 
     # Annonces
-    annonce_channel = bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
-    if annonce_channel:
-        embed = discord.Embed(title="Panneau des Annonces Internes", description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.", color=discord.Color.dark_blue())
-        await find_and_update_panel(
-            channel=annonce_channel,
-            embed_title="Panneau des Annonces Internes",
-            new_embed=embed,
-            new_view=AnnonceView()
-        )
+    embed_ann = discord.Embed(title="Panneau des Annonces Internes", description="Cliquez sur le bouton ci-dessous pour rédiger et publier une nouvelle annonce.", color=discord.Color.dark_blue())
+    await find_and_update_panel(
+        channel=bot.get_channel(ANNOUNCEMENT_CHANNEL_ID),
+        embed_title="Panneau des Annonces Internes",
+        new_embed=embed_ann,
+        new_view=AnnonceView()
+    )
 
-    # Panneau de Management (avec le bouton pour !open)
-    management_channel = bot.get_channel(MANAGEMENT_CHANNEL_ID)
-    if management_channel:
-        embed = discord.Embed(
-            title="Panneau de Gestion des Employés",
-            description="Utilisez le bouton ci-dessous pour créer un nouveau dossier (salon privé) pour un employé.",
-            color=discord.Color.dark_red()
-        )
-        await find_and_update_panel(
-            channel=management_channel,
-            embed_title="Panneau de Gestion des Employés",
-            new_embed=embed,
-            new_view=OpenChannelInitView()
-        )
+    # Panneau de Management (avec le bouton pour créer un salon)
+    embed_mng = discord.Embed(
+        title="Panneau de Gestion des Employés",
+        description="Utilisez le bouton ci-dessous pour créer un nouveau dossier (salon privé) pour un employé.",
+        color=discord.Color.dark_red()
+    )
+    await find_and_update_panel(
+        channel=bot.get_channel(MANAGEMENT_CHANNEL_ID),
+        embed_title="Panneau de Gestion des Employés",
+        new_embed=embed_mng,
+        new_view=OpenChannelInitView()
+    )
         
     await ctx.followup.send("✅ Panneaux principaux mis à jour !", ephemeral=True)
 
@@ -770,6 +776,9 @@ async def setup_panels(ctx):
 async def setup_panels_error(ctx, error):
     if isinstance(error, commands.MissingAnyRole):
         await ctx.send("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
+    else:
+        print(f"Erreur commande !setup: {error}")
+        await ctx.send(f"❌ Une erreur est survenue lors du setup : {error}", ephemeral=True)
 
 # =================================================================================
 # SECTION 10 : GESTION GÉNÉRALE DU BOT
