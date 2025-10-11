@@ -506,13 +506,72 @@ def create_financial_embed(member: discord.Member):
     
     return financial_embed
 
+class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
+    def __init__(self, member: discord.Member, original_message: discord.Message):
+        super().__init__()
+        self.member = member
+        self.original_message = original_message
+
+    trip_type = TextInput(
+        label="Type de trajet (T1, T2, ou T3)",
+        placeholder="Ex: T2",
+        max_length=2,
+        required=True
+    )
+    location = TextInput(
+        label="Lieu (requis pour T3 : station ou export)",
+        placeholder="Laissez vide si ce n'est pas un T3",
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        ttype = self.trip_type.value.strip().upper()
+        loc = self.location.value.strip().lower()
+        amount_to_add = 0
+
+        if ttype == "T1":
+            amount_to_add = 3200
+        elif ttype == "T2":
+            amount_to_add = 1600
+        elif ttype == "T3":
+            if loc not in ["station", "export"]:
+                await interaction.followup.send("❌ Pour un trajet T3, le lieu doit être obligatoirement `station` ou `export`.", ephemeral=True)
+                return
+            amount_to_add = 3200
+        else:
+            await interaction.followup.send("❌ Type de trajet invalide. Veuillez utiliser T1, T2, ou T3.", ephemeral=True)
+            return
+
+        # Mettre à jour les finances
+        finances = load_finances()
+        member_id_str = str(self.member.id)
+        finances[member_id_str]["solde"] += amount_to_add
+        save_finances(finances)
+
+        # Rafraîchir le panel original et confirmer
+        new_embed = create_financial_embed(self.member)
+        await self.original_message.edit(embed=new_embed)
+        await interaction.followup.send(f"✅ Trajet **{ttype}** d'un montant de **{amount_to_add}€** déclaré avec succès !", ephemeral=True)
+
 class FinancialPanelView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
     async def declare_trip_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("Fonctionnalité en cours de développement.", ephemeral=True)
+        # Retrouver l'employé lié au panel
+        embed = interaction.message.embeds[0]
+        try:
+            user_id_str = embed.description.split('<@')[1].split('>')[0]
+            member = await interaction.guild.fetch_member(int(user_id_str))
+        except (IndexError, ValueError, discord.NotFound):
+            await interaction.response.send_message("❌ Erreur : L'employé lié n'a pas pu être retrouvé.", ephemeral=True)
+            return
+        
+        # Ouvrir la modale pour la déclaration
+        await interaction.response.send_modal(DeclareTripModal(member=member, original_message=interaction.message))
 
     @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
     async def pay_button(self, interaction: discord.Interaction, button: Button):
