@@ -159,7 +159,7 @@ class StockView(View):
 async def stocks(ctx): await ctx.send(embed=create_stocks_embed(), view=StockView())
 
 # =================================================================================
-# SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS
+# SECTION 2 : LOGIQUE POUR LA COMMANDE !STATIONS (CORRIGÉE)
 # =================================================================================
 def load_locations():
     try:
@@ -212,10 +212,11 @@ def create_locations_embeds():
     global_embed.set_footer(text=f"Dernière mise à jour le {format_paris_time(get_paris_time())}"); embeds.append(global_embed)
     return embeds
 class LocationUpdateModal(Modal):
-    def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int):
-        super().__init__(title=f"{pump_name} - {location_name}"); self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
-        fuels = load_locations()[category_key][location_name]["pumps"][pump_name]
-        for fuel, qty in fuels.items(): self.add_item(TextInput(label=f"Nouvelle Quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
+    def __init__(self, category_key: str, location_name: str, pump_name: str, original_message_id: int, fuels_data: dict):
+        super().__init__(title=f"{pump_name} - {location_name}")
+        self.category_key, self.location_name, self.pump_name, self.original_message_id = category_key, location_name, pump_name, original_message_id
+        for fuel, qty in fuels_data.items(): 
+            self.add_item(TextInput(label=f"Nouvelle Quantité pour {fuel.upper()}", custom_id=fuel, default=str(qty)))
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True); data = load_locations(); pump_data = data[self.category_key][self.location_name]["pumps"][self.pump_name]
         for field in self.children:
@@ -228,49 +229,56 @@ class LocationUpdateModal(Modal):
             await interaction.followup.send("✅ Pompe mise à jour !", ephemeral=True)
         except (discord.NotFound, discord.Forbidden): await interaction.followup.send("⚠️ Pompe mise à jour, mais l'actualisation automatique a échoué.", ephemeral=True)
 class PumpSelectView(View):
-    def __init__(self, category_key: str, location_name: str, original_message_id: int):
-        super().__init__(timeout=180); self.category_key, self.location_name, self.original_message_id = category_key, location_name, original_message_id
-        pumps = list(load_locations()[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p) for p in pumps]
+    def __init__(self, category_key: str, location_name: str, original_message_id: int, locations_data: dict):
+        super().__init__(timeout=180); 
+        self.category_key, self.location_name, self.original_message_id, self.locations_data = category_key, location_name, original_message_id, locations_data
+        pumps = list(self.locations_data[category_key][location_name].get("pumps", {}).keys()); options = [SelectOption(label=p) for p in pumps]
         self.children[0].options = options if pumps else [SelectOption(label="Aucune pompe trouvée", value="disabled")]
     @discord.ui.select(placeholder="Choisis une pompe...", custom_id="locations_pump_selector")
     async def select_callback(self, i: discord.Interaction, select: Select):
         pump_name = select.values[0]
-        if pump_name != "disabled": await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id))
+        if pump_name != "disabled":
+            fuels_data = self.locations_data[self.category_key][self.location_name]["pumps"][pump_name]
+            await i.response.send_modal(LocationUpdateModal(self.category_key, self.location_name, pump_name, self.original_message_id, fuels_data))
 class LocationSelectView(View):
-    def __init__(self, category_key: str, original_message_id: int):
-        super().__init__(timeout=180); self.category_key, self.original_message_id = category_key, original_message_id
-        locations = list(load_locations().get(category_key, {}).keys()); options = [SelectOption(label=loc) for loc in locations]
+    def __init__(self, category_key: str, original_message_id: int, locations_data: dict):
+        super().__init__(timeout=180); 
+        self.category_key, self.original_message_id, self.locations_data = category_key, original_message_id, locations_data
+        locations = list(self.locations_data.get(category_key, {}).keys()); options = [SelectOption(label=loc) for loc in locations]
         self.children[0].options = options if locations else [SelectOption(label="Aucun lieu trouvé", value="disabled")]
     @discord.ui.select(placeholder="Choisis un lieu...", custom_id="locations_loc_selector")
     async def select_callback(self, interaction: discord.Interaction, select: Select):
-        await interaction.response.defer() # CORRECTION
+        await interaction.response.defer()
         loc_name = select.values[0]
         if loc_name == "disabled": await interaction.edit_original_response(content="Action annulée.", view=None); return
-        location_data = load_locations().get(self.category_key, {}).get(loc_name, {}); pumps = location_data.get("pumps", {})
+        location_data = self.locations_data.get(self.category_key, {}).get(loc_name, {}); pumps = location_data.get("pumps", {})
         if len(pumps) == 1:
             pump_name = list(pumps.keys())[0]
-            await interaction.followup.send_modal(LocationUpdateModal(self.category_key, loc_name, pump_name, self.original_message_id))
+            fuels_data = pumps[pump_name]
+            await interaction.followup.send_modal(LocationUpdateModal(self.category_key, loc_name, pump_name, self.original_message_id, fuels_data))
         else:
-            pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id)
+            pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id, self.locations_data)
             image_url = location_data.get("image_url"); embed = None
             if image_url: embed = discord.Embed(color=0x0099ff); embed.set_image(url=image_url)
             await interaction.edit_original_response(content="Choisis une pompe :", view=pump_view, embed=embed)
 class LocationCategorySelectView(View):
-    def __init__(self, original_message_id: int): 
+    def __init__(self, original_message_id: int, locations_data: dict): 
         super().__init__(timeout=180)
         self.original_message_id = original_message_id
+        self.locations_data = locations_data
     async def show_location_select(self, interaction: discord.Interaction, category_key: str):
-        await interaction.response.defer() # CORRECTION
-        locations = load_locations().get(category_key, {})
+        await interaction.response.defer()
+        locations = self.locations_data.get(category_key, {})
         if len(locations) == 1:
             location_name = list(locations.keys())[0]; location_data = locations[location_name]; pumps = location_data.get("pumps", {})
             if len(pumps) == 1:
                 pump_name = list(pumps.keys())[0]
-                await interaction.followup.send_modal(LocationUpdateModal(category_key, location_name, pump_name, self.original_message_id))
+                fuels_data = pumps[pump_name]
+                await interaction.followup.send_modal(LocationUpdateModal(category_key, location_name, pump_name, self.original_message_id, fuels_data))
             else:
-                 await interaction.edit_original_response(content=f"Choisis une pompe pour **{location_name}** :", view=PumpSelectView(category_key, location_name, self.original_message_id))
+                 await interaction.edit_original_response(content=f"Choisis une pompe pour **{location_name}** :", view=PumpSelectView(category_key, location_name, self.original_message_id, self.locations_data))
         else:
-            await interaction.edit_original_response(content="Choisis un lieu :", view=LocationSelectView(category_key, self.original_message_id))
+            await interaction.edit_original_response(content="Choisis un lieu :", view=LocationSelectView(category_key, self.original_message_id, self.locations_data))
     @discord.ui.button(label="Stations", style=discord.ButtonStyle.secondary)
     async def stations_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "stations")
     @discord.ui.button(label="Ports", style=discord.ButtonStyle.secondary)
@@ -280,7 +288,11 @@ class LocationCategorySelectView(View):
 class LocationsView(View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Mettre à jour", style=discord.ButtonStyle.primary, custom_id="update_location")
-    async def update_button(self, i: discord.Interaction, b: Button): await i.response.send_message("Choisis une catégorie :", view=LocationCategorySelectView(i.message.id), ephemeral=True)
+    async def update_button(self, i: discord.Interaction, b: Button):
+        await i.response.defer(ephemeral=True, thinking=True)
+        locations_data = load_locations()
+        view = LocationCategorySelectView(i.message.id, locations_data)
+        await i.followup.send("Choisis une catégorie :", view=view, ephemeral=True)
     @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_locations")
     async def refresh_button(self, i: discord.Interaction, b: Button): await i.response.edit_message(embeds=create_locations_embeds(), view=self)
 @bot.command(name="stations")
