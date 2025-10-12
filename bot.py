@@ -255,6 +255,7 @@ class LocationSelectView(View):
         if len(pumps) == 1:
             pump_name = list(pumps.keys())[0]
             fuels_data = pumps[pump_name]
+            # Ici on utilise followup car on a déjà répondu avec defer()
             await interaction.followup.send_modal(LocationUpdateModal(self.category_key, loc_name, pump_name, self.original_message_id, fuels_data))
         else:
             pump_view = PumpSelectView(self.category_key, loc_name, self.original_message_id, self.locations_data)
@@ -267,18 +268,18 @@ class LocationCategorySelectView(View):
         self.original_message_id = original_message_id
         self.locations_data = locations_data
     async def show_location_select(self, interaction: discord.Interaction, category_key: str):
-        await interaction.response.defer()
         locations = self.locations_data.get(category_key, {})
         if len(locations) == 1:
-            location_name = list(locations.keys())[0]; location_data = locations[location_name]; pumps = location_data.get("pumps", {})
+            location_name = list(locations.keys())[0]
+            pumps = locations[location_name].get("pumps", {})
             if len(pumps) == 1:
                 pump_name = list(pumps.keys())[0]
                 fuels_data = pumps[pump_name]
-                await interaction.followup.send_modal(LocationUpdateModal(category_key, location_name, pump_name, self.original_message_id, fuels_data))
+                await interaction.response.send_modal(LocationUpdateModal(category_key, location_name, pump_name, self.original_message_id, fuels_data))
             else:
-                 await interaction.edit_original_response(content=f"Choisis une pompe pour **{location_name}** :", view=PumpSelectView(category_key, location_name, self.original_message_id, self.locations_data))
+                 await interaction.response.edit_message(content=f"Choisis une pompe pour **{location_name}** :", view=PumpSelectView(category_key, location_name, self.original_message_id, self.locations_data))
         else:
-            await interaction.edit_original_response(content="Choisis un lieu :", view=LocationSelectView(category_key, self.original_message_id, self.locations_data))
+            await interaction.response.edit_message(content="Choisis un lieu :", view=LocationSelectView(category_key, self.original_message_id, self.locations_data))
     @discord.ui.button(label="Stations", style=discord.ButtonStyle.secondary)
     async def stations_button(self, i: discord.Interaction, b: Button): await self.show_location_select(i, "stations")
     @discord.ui.button(label="Ports", style=discord.ButtonStyle.secondary)
