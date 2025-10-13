@@ -550,7 +550,7 @@ def create_financial_embed(member: discord.Member):
     embed_color = discord.Color.red() if solde > 0 else discord.Color.green()
     solde_message = f"🔴 Votre solde est de **{solde_formatted} €**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted} €**."
     
-    financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*", color=embed_color)
+    financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Panneau de suivi des transactions.\n*Employé lié : {member.mention}*", color=embed_color)
     financial_embed.add_field(name="🧾 Solde Actuel", value=solde_message, inline=False)
     actions_text = (
         "🚢 **Déclarer un trajet** : T1 / T2 / T3\n"
@@ -561,112 +561,8 @@ def create_financial_embed(member: discord.Member):
     financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
     return financial_embed
 
-async def create_balances_summary_embed(guild: discord.Guild):
-    embed = discord.Embed(title="📊 Récapitulatif des Soldes", description="Aperçu des soldes actuels des employés.", color=discord.Color.gold())
-    finances = load_finances()
-    if not finances: embed.description = "Aucune donnée financière trouvée."; return embed
-    total_due = sum(data.get("solde", 0) for data in finances.values() if data.get("solde", 0) > 0)
-    balance_lines = []
-    for member_id, data in finances.items():
-        try: member_name = (await guild.fetch_member(int(member_id))).display_name
-        except (discord.NotFound, ValueError): member_name = f"Utilisateur Inconnu ({member_id})"
-        solde_formatted = f"{data.get('solde', 0):,.2f}".replace(',', ' ')
-        balance_lines.append(f"• {member_name} → **`{solde_formatted} €`**")
-    embed.description = "\n".join(balance_lines) if balance_lines else "Aucun employé n'a de solde."
-    total_due_formatted = f"{total_due:,.2f}".replace(',', ' ')
-    embed.add_field(name="Total à Payer", value=f"💸 **`{total_due_formatted} €`**", inline=False)
-    embed.set_footer(text=f"Dernière mise à jour le {format_paris_time(get_paris_time())}")
-    return embed
-
-async def create_weekly_summary_embed(guild: discord.Guild):
-    embed = discord.Embed(title="💸 Récapitulatif Hebdomadaire des Gains", description="Total des gains de chaque employé pour la semaine en cours (Lundi-Dimanche).", color=0x3498DB)
-    finances = load_finances()
-    current_week = get_paris_time().isocalendar()[1]
-    total_weekly_earnings = 0
-    earning_lines = []
-    for member_id, data in finances.items():
-        display_earnings = data.get("weekly_earnings", 0) if data.get("current_week") == current_week else 0
-        total_weekly_earnings += display_earnings
-        try: member_name = (await guild.fetch_member(int(member_id))).display_name
-        except (discord.NotFound, ValueError): member_name = f"Utilisateur Inconnu ({member_id})"
-        earnings_formatted = f"{display_earnings:,.2f}".replace(',', ' ')
-        earning_lines.append(f"• {member_name} → **`{earnings_formatted} €`**")
-    embed.description = "\n".join(earning_lines) if earning_lines else "Aucun gain enregistré cette semaine."
-    total_earnings_formatted = f"{total_weekly_earnings:,.2f}".replace(',', ' ')
-    embed.add_field(name="Total des Gains de la Semaine", value=f"💰 **`{total_earnings_formatted} €`**", inline=False)
-    embed.set_footer(text=f"Semaine {current_week} - Mis à jour le {format_paris_time(get_paris_time())}")
-    return embed
-class DeclareTripModal(Modal, title="Déclarer un nouveau trajet"):
-    def __init__(self, member: discord.Member, original_message: discord.Message):
-        super().__init__(); self.member, self.original_message = member, original_message
-    trip_type = TextInput(label="Type de trajet (T1, T2, ou T3)", placeholder="Ex: T2", max_length=2, required=True)
-    location = TextInput(label="Lieu (requis pour T3 : station ou export)", placeholder="Laissez vide si ce n'est pas un T3", required=False)
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        ttype, loc, amount_to_add = self.trip_type.value.strip().upper(), self.location.value.strip().lower(), 0
-        if ttype == "T1": amount_to_add = 3200
-        elif ttype == "T2": amount_to_add = 1600
-        elif ttype == "T3":
-            if loc not in ["station", "export"]: await interaction.followup.send("❌ Pour un T3, le lieu doit être `station` ou `export`.", ephemeral=True); return
-            amount_to_add = 3200
-        else: await interaction.followup.send("❌ Type de trajet invalide.", ephemeral=True); return
-        finances, member_id_str, current_week = load_finances(), str(self.member.id), get_paris_time().isocalendar()[1]
-        user_data = finances.get(member_id_str, {"solde": 0, "weekly_earnings": 0, "current_week": 0, "history": []})
-        if user_data.get("current_week") != current_week:
-            user_data["weekly_earnings"] = 0; user_data["current_week"] = current_week
-        user_data["solde"] += amount_to_add; user_data["weekly_earnings"] += amount_to_add
-        finances[member_id_str] = user_data
-        save_finances(finances)
-        details = f"{ttype} ({loc})" if ttype == "T3" else ttype
-        add_to_history(self.member.id, "Ajout Trajet", f"+{amount_to_add}€", details)
-        await log_finance_change(interaction, self.member, "Déclaration de Trajet", f"+{amount_to_add}€", details)
-        await self.original_message.edit(embed=create_financial_embed(self.member))
-        await update_summary_panels()
-        await interaction.followup.send(f"✅ Trajet **{ttype}** de **{amount_to_add}€** ajouté à {self.member.display_name}.", ephemeral=True)
-
-class FinancialPanelView(View):
-    def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Déclarer un trajet", style=discord.ButtonStyle.success, custom_id="declare_trip")
-    async def declare_trip_button(self, i: discord.Interaction, b: Button):
-        try: member = await i.guild.fetch_member(int(i.message.embeds[0].description.split('<@')[1].split('>')[0]))
-        except: await i.response.send_message("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
-        await i.response.send_modal(DeclareTripModal(member, i.message))
-    @discord.ui.button(label="Payer", style=discord.ButtonStyle.primary, custom_id="pay_balance")
-    async def pay_button(self, i: discord.Interaction, b: Button):
-        if not any(r.name in ["Patron", "Co-Patron"] for r in i.user.roles): await i.response.send_message("❌ Vous n'avez pas la permission.", ephemeral=True); return
-        await i.response.defer(ephemeral=True)
-        try: member = await i.guild.fetch_member(int(i.message.embeds[0].description.split('<@')[1].split('>')[0]))
-        except: await i.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
-        finances, member_id_str = load_finances(), str(member.id)
-        balance = finances.get(member_id_str, {}).get("solde", 0)
-        if balance <= 0: await i.followup.send(f"ℹ️ Le solde de **{member.display_name}** est déjà à jour.", ephemeral=True); return
-        finances[member_id_str]["solde"] = 0; save_finances(finances)
-        add_to_history(member.id, "Paiement", f"-{balance}€", "Solde remis à zéro")
-        await log_finance_change(i, member, "Paiement", f"-{balance}€", f"Le solde de {balance}€ a été réglé.")
-        await i.message.edit(embed=create_financial_embed(member))
-        await update_summary_panels()
-        await i.followup.send(f"✅ Le solde de **{member.display_name}** a été payé.", ephemeral=True)
-    @discord.ui.button(label="Historique", style=discord.ButtonStyle.secondary, custom_id="financial_history")
-    async def history_button(self, i: discord.Interaction, b: Button):
-        await i.response.defer(ephemeral=True)
-        try: member = await i.guild.fetch_member(int(i.message.embeds[0].description.split('<@')[1].split('>')[0]))
-        except: await i.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
-        history = load_finances().get(str(member.id), {}).get("history", [])
-        if not history: await i.followup.send("ℹ️ Aucun historique de transaction.", ephemeral=True); return
-        embed = discord.Embed(title=f"📜 Historique de {member.display_name}", color=discord.Color.blue(), description="\n\n".join([f"`{e['timestamp']}`\n**{e['action']}**{(f' ({e['details']})' if e['details'] else '')} : `{e['amount']}`" for e in history[:10]]))
-        embed.set_footer(text="Affiche les 10 dernières opérations.")
-        await i.followup.send(embed=embed, ephemeral=True)
-    @discord.ui.button(label="Rafraîchir", style=discord.ButtonStyle.secondary, custom_id="refresh_financial_panel", emoji="🔄")
-    async def refresh_button(self, i: discord.Interaction, b: Button):
-        await i.response.defer()
-        try: member = await i.guild.fetch_member(int(i.message.embeds[0].description.split('<@')[1].split('>')[0]))
-        except: await i.followup.send("❌ Erreur : Employé lié introuvable.", ephemeral=True); return
-        await i.edit_original_response(embed=create_financial_embed(member))
-class BalancesSummaryView(View):
-    def __init__(self): super().__init__(timeout=None)
-
 # =================================================================================
-# SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ
+# SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ (CORRIGÉE)
 # =================================================================================
 class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
     member_id = TextInput(label="ID du membre", placeholder="Collez l'ID de l'utilisateur ici")
@@ -684,10 +580,19 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
             await interaction.followup.send(f"⚠️ Un salon nommé `{channel_name}` existe déjà.", ephemeral=True); return
         try: await member.edit(nick=nickname)
         except discord.Forbidden: await interaction.followup.send(f"⚠️ Je n'ai pas la permission de renommer {member.display_name}.", ephemeral=True)
+        
         patron_role, co_patron_role = discord.utils.get(interaction.guild.roles, name="Patron"), discord.utils.get(interaction.guild.roles, name="Co-Patron")
-        overwrites = { i.guild.default_role: discord.PermissionOverwrite(read_messages=False), member: discord.PermissionOverwrite(read_messages=True, send_messages=True), i.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True) }
+        
+        # --- CORRECTION ICI ---
+        overwrites = { 
+            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False), 
+            member: discord.PermissionOverwrite(read_messages=True, send_messages=True), 
+            interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True) 
+        }
+        
         if patron_role: overwrites[patron_role] = discord.PermissionOverwrite(read_messages=True)
         if co_patron_role: overwrites[co_patron_role] = discord.PermissionOverwrite(read_messages=True)
+        
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
             welcome_embed = discord.Embed(title=f"Bienvenue {nickname} !", description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.", color=discord.Color.blue())
