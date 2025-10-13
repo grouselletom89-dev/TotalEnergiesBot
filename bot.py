@@ -550,7 +550,7 @@ def create_financial_embed(member: discord.Member):
     embed_color = discord.Color.red() if solde > 0 else discord.Color.green()
     solde_message = f"🔴 Votre solde est de **{solde_formatted} €**." if solde > 0 else f"🟢 Votre solde est de **{solde_formatted} €**."
     
-    financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Panneau de suivi des transactions.\n*Employé lié : {member.mention}*", color=embed_color)
+    financial_embed = discord.Embed(title="💰 Panel de Gestion Financière", description=f"Ce panneau vous permet de suivre vos transactions.\n*Employé lié : {member.mention}*", color=embed_color)
     financial_embed.add_field(name="🧾 Solde Actuel", value=solde_message, inline=False)
     actions_text = (
         "🚢 **Déclarer un trajet** : T1 / T2 / T3\n"
@@ -560,7 +560,6 @@ def create_financial_embed(member: discord.Member):
     financial_embed.add_field(name="🛠️ Actions Disponibles", value=actions_text, inline=False)
     financial_embed.set_footer(text=f"Panel financier de {member.display_name}")
     return financial_embed
-
 # =================================================================================
 # SECTION 8 : LOGIQUE POUR LA CRÉATION DE SALON PRIVÉ (CORRIGÉE)
 # =================================================================================
@@ -583,7 +582,6 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         
         patron_role, co_patron_role = discord.utils.get(interaction.guild.roles, name="Patron"), discord.utils.get(interaction.guild.roles, name="Co-Patron")
         
-        # --- CORRECTION ICI ---
         overwrites = { 
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False), 
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True), 
@@ -595,11 +593,22 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
         
         try:
             new_channel = await interaction.guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
-            welcome_embed = discord.Embed(title=f"Bienvenue {nickname} !", description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.", color=discord.Color.blue())
-            if member.joined_at: welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
+            
+            # --- CODE RESTAURÉ ---
+            welcome_embed = discord.Embed(
+                title=f"Bienvenue {nickname} !",
+                description=f"Bonjour {member.mention}, bienvenue dans votre salon privé avec la direction.\n\nN'hésitez pas à utiliser cet espace pour toute question ou demande. Nous restons à votre écoute.",
+                color=discord.Color.blue()
+            )
+            if member.joined_at:
+                welcome_embed.add_field(name="Date de recrutement", value=discord.utils.format_dt(member.joined_at, style='F'))
             welcome_embed.set_thumbnail(url=member.display_avatar.url)
             await new_channel.send(embed=welcome_embed)
-            await new_channel.send(embed=create_financial_embed(member), view=FinancialPanelView())
+
+            financial_embed = create_financial_embed(member)
+            await new_channel.send(embed=financial_embed, view=FinancialPanelView())
+            # --- FIN DU CODE RESTAURÉ ---
+
             await update_summary_panels()
             await interaction.followup.send(f"✅ Salon {new_channel.mention} créé et {member.display_name} renommé.", ephemeral=True)
         except discord.Forbidden: await interaction.followup.send("❌ Erreur : Je n'ai pas la permission de créer un salon.", ephemeral=True)
