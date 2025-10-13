@@ -604,10 +604,8 @@ class OpenChannelModal(Modal, title="Ouvrir un salon privé"):
             welcome_embed.set_thumbnail(url=member.display_avatar.url)
             await new_channel.send(embed=welcome_embed)
 
-            # --- LIGNE MANQUANTE RESTAURÉE ---
             financial_embed = create_financial_embed(member)
             await new_channel.send(embed=financial_embed, view=FinancialPanelView())
-            # --- FIN DE LA CORRECTION ---
 
             await update_summary_panels()
             await interaction.followup.send(f"✅ Salon {new_channel.mention} créé et {member.display_name} renommé.", ephemeral=True)
